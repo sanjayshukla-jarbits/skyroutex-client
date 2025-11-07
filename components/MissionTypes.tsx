@@ -3,7 +3,17 @@
 import { Plus } from 'lucide-react'
 import { missionTypes } from '@/lib/data'
 
-export default function MissionTypes() {
+interface MissionTypesProps {
+  onPageChange?: (page: string) => void
+}
+
+export default function MissionTypes({ onPageChange }: MissionTypesProps) {
+  const handleMissionTypeClick = (missionTypeName: string) => {
+    if (onPageChange) {
+      onPageChange('plan-mission')
+    }
+  }
+
   return (
     <div className="flex-1 bg-slate-900 min-h-screen p-8">
       <div className="bg-blue-600 rounded-xl p-6 mb-8 shadow-xl">
@@ -31,6 +41,7 @@ export default function MissionTypes() {
           return (
             <div
               key={index}
+              onClick={() => handleMissionTypeClick(type.name)}
               className={`${type.color} rounded-xl p-6 hover:scale-105 transition-transform cursor-pointer shadow-xl`}
             >
               <div className="flex justify-center mb-6">

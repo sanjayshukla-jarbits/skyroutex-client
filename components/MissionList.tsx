@@ -2,14 +2,16 @@
 
 import { useState } from 'react'
 import { Search, Filter, Plus, AlertTriangle } from 'lucide-react'
-import { useRouter } from 'next/navigation';
 import { missionsData } from '@/lib/data'
 import { Mission } from '@/types'
 
-export default function MissionList() {
+interface MissionListProps {
+  onPageChange?: (page: string) => void
+}
+
+export default function MissionList({ onPageChange }: MissionListProps) {
   const [filter, setFilter] = useState<string>('All')
   const [searchQuery, setSearchQuery] = useState<string>('')
-  const router = useRouter();
 
   const getStatusColor = (status: Mission['status']): string => {
     switch (status) {
@@ -38,6 +40,12 @@ export default function MissionList() {
     if (searchQuery && !mission.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
     return true
   })
+
+  const handlePlanMission = () => {
+    if (onPageChange) {
+      onPageChange('mission-types')
+    }
+  }
 
   return (
     <div className="flex-1 bg-slate-900 min-h-screen">
@@ -69,7 +77,10 @@ export default function MissionList() {
               <Filter size={20} />
               <span>Filters</span>
             </button>
-            <button onClick={() => router.push('/plan-mission')} className="flex items-center space-x-2 px-6 py-3 bg-white text-blue-600 font-semibold rounded-lg hover:bg-blue-50 transition-colors shadow-lg">
+            <button 
+              onClick={handlePlanMission} 
+              className="flex items-center space-x-2 px-6 py-3 bg-white text-blue-600 font-semibold rounded-lg hover:bg-blue-50 transition-colors shadow-lg"
+            >
               <Plus size={20} />
               <span>Plan Mission</span>
             </button>
@@ -116,37 +127,33 @@ export default function MissionList() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div>
-                        <div className="text-white font-medium">{mission.name}</div>
-                        <div className="text-slate-400 text-sm">{mission.description}</div>
-                      </div>
+                      <div className="text-white font-medium">{mission.name}</div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-lg text-white text-sm font-medium ${getTypeColor(mission.type)}`}>
+                      <span className={`${getTypeColor(mission.type)} px-3 py-1 rounded-full text-white text-sm font-medium`}>
                         {mission.type}
                       </span>
                     </td>
                     <td className="px-6 py-4">
                       <div>
-                        <div className="text-white font-medium">{mission.vehicle}</div>
-                        <div className="text-slate-400 text-sm">Operator: {mission.operator}</div>
+                        <div className="text-white">{mission.vehicle}</div>
+                        <div className="text-slate-400 text-sm">{mission.operator}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-2">
-                        <span className={`px-3 py-1 rounded-lg text-white text-sm font-medium ${getStatusColor(mission.status)}`}>
-                          {mission.status}
-                        </span>
-                        {mission.alert && <AlertTriangle className="text-yellow-400" size={20} />}
+                        <div className={`w-2 h-2 ${getStatusColor(mission.status)} rounded-full`}></div>
+                        <span className="text-white">{mission.status}</span>
+                        {mission.alert && <AlertTriangle size={16} className="text-yellow-500" />}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
-                        <div className="flex-1 bg-slate-700 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-full ${getStatusColor(mission.status)}`}
+                        <div className="flex-1 bg-slate-700 rounded-full h-2">
+                          <div 
+                            className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
                             style={{ width: `${mission.progress}%` }}
-                          />
+                          ></div>
                         </div>
                         <span className="text-white font-medium text-sm w-12">{mission.progress}%</span>
                       </div>

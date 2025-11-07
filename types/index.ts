@@ -44,6 +44,8 @@ export interface Waypoint {
   coords: string
   alt: string
   color: string
+  lat: number
+  lon: number
 }
 
 export interface MenuItem {
