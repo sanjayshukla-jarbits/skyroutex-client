@@ -13,11 +13,18 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 })
 
-interface MapComponentProps {
-  waypoints: Waypoint[]
+interface MissionStats {
+  totalDistance: number
+  flightTime: number
+  batteryUsage: number
 }
 
-export default function MapComponent({ waypoints }: MapComponentProps) {
+interface MapComponentProps {
+  waypoints: Waypoint[]
+  missionStats: MissionStats
+}
+
+export default function MapComponent({ waypoints, missionStats }: MapComponentProps) {
   const mapRef = useRef<L.Map | null>(null)
   const markersRef = useRef<L.Marker[]>([])
   const polylineRef = useRef<L.Polyline | null>(null)
@@ -143,12 +150,29 @@ export default function MapComponent({ waypoints }: MapComponentProps) {
     }
   }, [waypoints])
 
+  // Format flight time display
+  const formatFlightTime = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60)
+    const mins = Math.round(minutes % 60)
+    if (hours > 0) {
+      return `${hours}h ${mins}min`
+    }
+    return `${mins} min`
+  }
+
+  // Get battery status color
+  const getBatteryColor = (percentage: number): string => {
+    if (percentage <= 25) return 'text-red-400'
+    if (percentage <= 50) return 'text-yellow-400'
+    return 'text-green-400'
+  }
+
   return (
     <div className="relative w-full h-full">
       <div ref={mapContainerRef} className="w-full h-full" />
       
       {/* Legend Overlay */}
-      <div className="absolute top-4 left-4 bg-slate-800 bg-opacity-90 rounded-lg p-4 border border-slate-700 shadow-lg z-[1000]">
+      <div className="absolute top-20 left-3 bg-slate-800 bg-opacity-90 rounded-lg p-4 border border-slate-700 shadow-lg z-[1000]">
         <h3 className="text-white font-semibold mb-3 text-sm">LEGEND</h3>
         <div className="space-y-2 text-xs">
           <div className="flex items-center space-x-2">
@@ -170,31 +194,35 @@ export default function MapComponent({ waypoints }: MapComponentProps) {
         </div>
       </div>
 
-      {/* Map Type Toggle */}
-      <div className="absolute top-4 right-4 bg-slate-800 bg-opacity-90 rounded-lg p-2 border border-slate-700 shadow-lg z-[1000]">
-        <div className="text-white text-xs font-semibold px-2 py-1">
-          🛰️ Satellite View
-        </div>
-      </div>
-
       {/* Mission Stats Overlay */}
-      <div className="absolute bottom-4 left-4 bg-slate-800 bg-opacity-90 rounded-lg p-4 border border-slate-700 shadow-lg z-[1000]">
+      <div className="absolute bottom-4 left-3 bg-slate-800 bg-opacity-95 rounded-lg p-4 border border-slate-700 shadow-lg z-[1000]">
+        <h3 className="text-white font-semibold mb-3 text-xs">REAL-TIME MISSION STATS</h3>
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
             <div className="text-slate-400 text-xs mb-1">Total Distance</div>
-            <div className="text-green-400 font-bold">44.8 km</div>
+            <div className="text-green-400 font-bold">{missionStats.totalDistance} km</div>
           </div>
           <div>
             <div className="text-slate-400 text-xs mb-1">Flight Time</div>
-            <div className="text-white font-bold">~18 min</div>
+            <div className="text-white font-bold">~{formatFlightTime(missionStats.flightTime)}</div>
           </div>
           <div>
             <div className="text-slate-400 text-xs mb-1">Battery Usage</div>
-            <div className="text-white font-bold">~45%</div>
+            <div className={`font-bold ${getBatteryColor(missionStats.batteryUsage)}`}>
+              ~{missionStats.batteryUsage}%
+            </div>
           </div>
           <div>
             <div className="text-slate-400 text-xs mb-1">Waypoints</div>
             <div className="text-white font-bold">{waypoints.length} points</div>
+          </div>
+        </div>
+        <div className="mt-3 pt-3 border-t border-slate-700">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400 text-xs">Status:</span>
+            <span className={`font-bold text-xs ${missionStats.batteryUsage > 80 ? 'text-red-400' : 'text-green-400'}`}>
+              {missionStats.batteryUsage > 80 ? '⚠️ High Power' : '✓ Optimal'}
+            </span>
           </div>
         </div>
       </div>
