@@ -177,5 +177,6 @@ export const updateMission = (id: number, data: Partial<any>) => {
   const transformedData = transformMissionData(data)
   return missionService.updateMission(id, transformedData)
 }
+
 export const deleteMission = (id: number) => missionService.deleteMission(id)
 export const getMissionStats = () => missionService.getMissionStats()

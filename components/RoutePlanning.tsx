@@ -1,11 +1,11 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { CheckCircle, MapPin, Plus, X, Map as MapIcon, Search, ChevronLeft, ChevronRight, Edit } from 'lucide-react'
+import { CheckCircle, MapPin, Plus, X, Map as MapIcon, Search, Save, ChevronLeft, ChevronRight, Edit } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import Select from 'react-select'
 import { Waypoint } from '@/types'
-import { createMission } from '@/services/missionService'
+import { createMission, updateMission, type ApiMission } from '@/services/missionService'
 
 // Dynamically import map component to avoid SSR issues
 const MapComponent = dynamic(() => import('./MapComponent'), { 
@@ -19,6 +19,13 @@ const MapComponent = dynamic(() => import('./MapComponent'), {
     </div>
   )
 })
+
+interface RoutePlanningProps {
+  selectedMission?: ApiMission | null
+  editMode?: boolean
+  onMissionSaved?: () => void
+  onBackToMissions?: () => void
+}
 
 interface LocationOption {
   value: string
@@ -41,7 +48,12 @@ interface MissionStats {
   batteryUsage: number
 }
 
-export default function RoutePlanning() {
+export default function RoutePlanning({ 
+  selectedMission,
+  editMode = false,
+  onMissionSaved,
+  onBackToMissions
+}: RoutePlanningProps) {
   // Corridor options
   const corridorOptions: CorridorOption[] = [
     { value: 'northern', label: 'Northern Border Corridor', color: 'blue', description: 'India-Nepal border surveillance' },
@@ -117,6 +129,73 @@ export default function RoutePlanning() {
   })
   const [sidebarOpen, setSidebarOpen] = useState(true)
   
+  // Load mission data when selectedMission changes
+  useEffect(() => {
+    if (selectedMission) {
+      console.log('Loading mission:', selectedMission)
+      
+      // Load waypoints
+      if (selectedMission.waypoints && Array.isArray(selectedMission.waypoints)) {
+        const loadedWaypoints: Waypoint[] = selectedMission.waypoints.map((wp: any, index: number) => {
+          let lat = wp.lat
+          let lon = wp.lon
+          
+          // Parse coords string if needed
+          if (typeof wp.coords === 'string' && wp.coords.includes('°')) {
+            const coordMatch = wp.coords.match(/([\d.]+)°\s*[NS],\s*([\d.]+)°\s*[EW]/)
+            if (coordMatch) {
+              lat = parseFloat(coordMatch[1])
+              lon = parseFloat(coordMatch[2])
+            }
+          }
+          
+          // Determine color
+          let color = 'bg-blue-500'
+          if (index === 0) color = 'bg-green-500'
+          else if (index === selectedMission.waypoints.length - 1) color = 'bg-red-500'
+          else if (wp.color) color = wp.color
+          
+          return {
+            id: wp.id || `wp${index}`,
+            label: wp.label || `Waypoint ${index + 1}`,
+            coords: wp.coords || `${lat.toFixed(4)}° N, ${lon.toFixed(4)}° E`,
+            alt: wp.alt || '100m AGL',
+            color: color,
+            lat: lat,
+            lon: lon
+          }
+        })
+        
+        setWaypoints(loadedWaypoints)
+      }
+      
+      // Load stats
+      setMissionStats({
+        totalDistance: selectedMission.total_distance || 0,
+        flightTime: selectedMission.flight_time || 0,
+        batteryUsage: selectedMission.battery_usage || 0
+      })
+      
+      // Load corridor
+      if (selectedMission.corridor_label) {
+        const corridor = corridorOptions.find(c => c.label === selectedMission.corridor_label)
+        if (corridor) {
+          setSelectedCorridor(corridor)
+        } else {
+          setSelectedCorridor({
+            value: selectedMission.corridor_value || 'custom',
+            label: selectedMission.corridor_label,
+            color: selectedMission.corridor_color || 'blue',
+            description: selectedMission.corridor_description || ''
+          })
+        }
+      }
+      
+      // Load mission name
+      setMissionName(selectedMission.mission_name || '')
+    }
+  }, [selectedMission])
+
   const searchTimeoutRef = useRef<NodeJS.Timeout>()
   const startSearchTimeoutRef = useRef<NodeJS.Timeout>()
   const endSearchTimeoutRef = useRef<NodeJS.Timeout>()
@@ -450,22 +529,21 @@ export default function RoutePlanning() {
 
     setIsSaving(true)
     setSaveError(null)
-    setSaveSuccess(false)
 
     try {
       const missionData = {
-        mission_name: missionName.trim(), // Changed from missionName
-        mission_type: 'Route Planning', // Changed from missionType
+        mission_name: missionName,
+        mission_type: 'Surveillance',
         corridor: selectedCorridor ? {
           value: selectedCorridor.value,
           label: selectedCorridor.label,
           color: selectedCorridor.color,
           description: selectedCorridor.description
         } : null,
-        mission_stats: { // Changed from missionStats
-          total_distance: missionStats.totalDistance, // Changed from totalDistance
-          flight_time: missionStats.flightTime, // Changed from flightTime
-          battery_usage: missionStats.batteryUsage, // Changed from batteryUsage
+        mission_stats: {
+          total_distance: missionStats.totalDistance,
+          flight_time: missionStats.flightTime,
+          battery_usage: missionStats.batteryUsage,
         },
         waypoints: waypoints.map(wp => ({
           id: wp.id,
@@ -476,24 +554,34 @@ export default function RoutePlanning() {
           lat: wp.lat,
           lon: wp.lon,
         })),
-        created_by: 'current_user', // Changed from createdBy
+        created_by: 'current_user',
         notes: '',
-        vehicle_id: null, // Changed from vehicleId
-        operator_id: null, // Changed from operatorId
+        vehicle_id: null,
+        operator_id: null,
       }
 
-      const result = await createMission(missionData)
+      let result
+      if (editMode && selectedMission) {
+        // Update existing mission
+        result = await updateMission(selectedMission.id, missionData)
+        console.log('Mission updated:', result)
+      } else {
+        // Create new mission
+        result = await createMission(missionData)
+        console.log('Mission created:', result)
+      }
 
       setSaveSuccess(true)
       setShowSaveDialog(false)
       setMissionName('')
       
-      // Show success message for 3 seconds
       setTimeout(() => {
         setSaveSuccess(false)
-      }, 3000)
+        if (onMissionSaved) {
+          onMissionSaved()
+        }
+      }, 2000)
 
-      console.log('Mission saved successfully:', result)
     } catch (error: any) {
       console.error('Error saving mission:', error)
       setSaveError(error.message || 'Failed to save mission')
@@ -506,33 +594,52 @@ export default function RoutePlanning() {
     <div className="flex-1 bg-slate-900 h-screen flex flex-col">
       {/* Header */}
       <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-900 z-10">
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-white mb-1">
-            {waypoints[0]?.label.replace('Start: ', '')} to {waypoints[waypoints.length - 1]?.label.replace('End: ', '')}
-          </h1>
-          <p className="text-slate-400 text-sm">
-            Distance: {missionStats.totalDistance} km • Duration: ~{formatFlightTime(missionStats.flightTime)} • Battery: {missionStats.batteryUsage}%
-          </p>
+        <div className="flex items-center space-x-4">
+          {/* Back Button */}
+          {(selectedMission || editMode) && onBackToMissions && (
+            <button
+              onClick={onBackToMissions}
+              className="flex items-center space-x-2 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              <ChevronLeft size={20} />
+              <span>Back to Missions</span>
+            </button>
+          )}
+          
+          <div className="flex-1">
+            <h1 className="text-xl font-bold text-white mb-1">
+              {editMode ? `Edit: ${selectedMission?.mission_name || 'Mission'}` : 
+              selectedMission ? `View: ${selectedMission.mission_name}` : 
+              `${waypoints[0]?.label.replace('Start: ', '')} to ${waypoints[waypoints.length - 1]?.label.replace('End: ', '')}`}
+            </h1>
+            <p className="text-slate-400 text-sm">
+              Distance: {missionStats.totalDistance.toFixed(2)} km • 
+              Duration: {formatFlightTime(missionStats.flightTime)} • 
+              Battery: {missionStats.batteryUsage.toFixed(1)}%
+            </p>
+          </div>
         </div>
+
         <div className="flex items-center space-x-3">
-          <button className="flex items-center space-x-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors text-sm">
-            <CheckCircle size={18} />
-            <span>Validate</span>
-          </button>
-          <button 
-            onClick={() => setShowSaveDialog(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-lg text-sm"
-          >
-            <span>Save Mission</span>
-          </button>
+          {(!selectedMission || editMode) && (
+            <button 
+              onClick={() => setShowSaveDialog(true)}
+              className="flex items-center space-x-2 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-lg"
+            >
+              <Save size={20} />
+              <span>{editMode ? 'Update Mission' : 'Save Mission'}</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Success Message - ADDED */}
       {saveSuccess && (
-        <div className="absolute top-20 right-6 bg-green-600 text-white px-6 py-3 rounded-lg shadow-xl z-50 flex items-center space-x-2 animate-fade-in">
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-2xl z-50 flex items-center space-x-2 animate-bounce">
           <CheckCircle size={20} />
-          <span className="font-semibold">Mission saved successfully!</span>
+          <span className="font-semibold">
+            {editMode ? 'Mission Updated Successfully!' : 'Mission Saved Successfully!'}
+          </span>
         </div>
       )}
 
@@ -654,6 +761,7 @@ export default function RoutePlanning() {
                   <MapPin className="text-green-500" size={16} />
                   <span className="text-slate-400 text-xs font-semibold">START POINT</span>
                 </div>
+                {(!selectedMission || editMode) && (
                 <button 
                   onClick={() => setEditingStart(!editingStart)}
                   className="text-green-400 hover:text-green-300 transition-colors"
@@ -661,6 +769,7 @@ export default function RoutePlanning() {
                 >
                   <Edit size={16} />
                 </button>
+              )}
               </div>
               
               {editingStart ? (
@@ -799,18 +908,20 @@ export default function RoutePlanning() {
                 />
               </div>
 
-              <button 
-                onClick={addWaypoint}
-                disabled={!selectedLocation}
-                className={`w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                  selectedLocation 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                    : 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                }`}
-              >
-                <Plus size={16} />
-                <span className="text-sm">Add Stop to Route</span>
-              </button>
+              {(!selectedMission || editMode) && (
+                <button 
+                  onClick={addWaypoint}
+                  disabled={!selectedLocation}
+                  className={`w-full flex items-center justify-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                    selectedLocation 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Plus size={16} />
+                  <span className="text-sm">Add Stop to Route</span>
+                </button>
+              )}
             </div>
 
             {/* Route Waypoints */}
@@ -839,10 +950,10 @@ export default function RoutePlanning() {
                           <div className="text-slate-400 text-xs">{waypoint.coords}</div>
                           <div className="text-blue-400 text-xs">{waypoint.alt}</div>
                         </div>
-                        {waypoint.id !== 'start' && waypoint.id !== 'end' && (
-                          <button 
+                        {(!selectedMission || editMode) && waypoint.id !== 'start' && waypoint.id !== 'end' && (
+                          <button
                             onClick={() => removeWaypoint(waypoint.id)}
-                            className="text-slate-500 hover:text-red-500 flex-shrink-0 transition-colors"
+                            className="text-red-400 hover:text-red-300 transition-colors"
                           >
                             <X size={16} />
                           </button>
