@@ -137,6 +137,85 @@ class MissionService {
 
     return response.json()
   }
+
+  /**
+   * 🆕 NEW: Update mission status
+   */
+  async updateMissionStatus(id: number, newStatus: string): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/missions/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        status: newStatus 
+      }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to update mission status' }))
+      throw new Error(error.detail || 'Failed to update mission status')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * 🆕 NEW: Start a mission (convenience method)
+   */
+  async startMission(id: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/missions/${id}/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to start mission' }))
+      throw new Error(error.detail || 'Failed to start mission')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * 🆕 NEW: Pause a mission (convenience method)
+   */
+  async pauseMission(id: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/missions/${id}/pause`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to pause mission' }))
+      throw new Error(error.detail || 'Failed to pause mission')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * 🆕 NEW: Complete a mission (convenience method)
+   */
+  async completeMission(id: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/missions/${id}/complete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to complete mission' }))
+      throw new Error(error.detail || 'Failed to complete mission')
+    }
+
+    return response.json()
+  }
 }
 
 export const missionService = new MissionService()
@@ -180,3 +259,8 @@ export const updateMission = (id: number, data: Partial<any>) => {
 
 export const deleteMission = (id: number) => missionService.deleteMission(id)
 export const getMissionStats = () => missionService.getMissionStats()
+
+export const updateMissionStatus = (id: number, status: string) => missionService.updateMissionStatus(id, status)
+export const startMission = (id: number) => missionService.startMission(id)
+export const pauseMission = (id: number) => missionService.pauseMission(id)
+export const completeMission = (id: number) => missionService.completeMission(id)

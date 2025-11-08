@@ -1,8 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Search, Plus, AlertTriangle, Trash2, Edit, Eye, Loader2, RefreshCw, Filter } from 'lucide-react'
-import { getMissions, deleteMission, type ApiMission, type PaginatedResponse } from '@/services/missionService'
+import { Search, Plus, AlertTriangle, Trash2, Edit, Eye, Loader2, RefreshCw, Filter, Play, Pause, CheckCircle } from 'lucide-react'
+import { 
+  getMissions, 
+  deleteMission, 
+  startMission,
+  pauseMission,
+  completeMission,
+  type ApiMission, 
+  type PaginatedResponse 
+} from '@/services/missionService'
 
 interface MissionListComponentProps {
   onPageChange?: (page: string) => void
@@ -94,6 +102,53 @@ export default function MissionListComponent({ onPageChange, onEditMission, onVi
       await loadMissions() // Reload the list
     } catch (err: any) {
       alert('Failed to delete mission: ' + err.message)
+    }
+  }
+
+  // 🆕 NEW: Handle starting a mission
+  const handleStartMission = async (mission: ApiMission) => {
+    const confirmStart = confirm(
+      `Start mission "${mission.mission_name}"?\n\n` +
+      `Distance: ${mission.total_distance?.toFixed(2) || 'N/A'} km\n` +
+      `Duration: ${mission.flight_time?.toFixed(1) || 'N/A'} min\n` +
+      `Battery: ${mission.battery_usage?.toFixed(1) || 'N/A'}%`
+    )
+
+    if (!confirmStart) return
+
+    try {
+      await startMission(mission.id)
+      alert(`✅ Mission "${mission.mission_name}" has been started!`)
+      await loadMissions()
+    } catch (err: any) {
+      alert('Failed to start mission: ' + err.message)
+      console.error('Error starting mission:', err)
+    }
+  }
+
+  // 🆕 NEW: Handle pausing a mission
+  const handlePauseMission = async (mission: ApiMission) => {
+    if (!confirm(`Pause mission "${mission.mission_name}"?`)) return
+
+    try {
+      await pauseMission(mission.id)
+      alert(`⏸️ Mission "${mission.mission_name}" has been paused.`)
+      await loadMissions()
+    } catch (err: any) {
+      alert('Failed to pause mission: ' + err.message)
+    }
+  }
+
+  // 🆕 NEW: Handle completing a mission
+  const handleCompleteMission = async (mission: ApiMission) => {
+    if (!confirm(`Mark mission "${mission.mission_name}" as completed?`)) return
+
+    try {
+      await completeMission(mission.id)
+      alert(`✅ Mission "${mission.mission_name}" has been completed!`)
+      await loadMissions()
+    } catch (err: any) {
+      alert('Failed to complete mission: ' + err.message)
     }
   }
 
@@ -450,6 +505,51 @@ export default function MissionListComponent({ onPageChange, onEditMission, onVi
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center space-x-2">
+                            {/* 🆕 START BUTTON - Show for pending/draft missions */}
+                            {(mission.status?.toLowerCase() === 'pending' || mission.status?.toLowerCase() === 'draft') && (
+                              <button
+                                onClick={() => handleStartMission(mission)}
+                                className="p-2 text-green-400 hover:bg-slate-600 rounded transition-colors group relative"
+                                title="Start Mission"
+                              >
+                                <Play size={18} className="fill-current" />
+                                <span className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-xs text-white rounded whitespace-nowrap z-10">
+                                  Start Mission
+                                </span>
+                              </button>
+                            )}
+                            
+                            {/* 🆕 PAUSE BUTTON - Show for active missions */}
+                            {(mission.status?.toLowerCase() === 'active' || mission.status?.toLowerCase() === 'in_progress') && (
+                              <button
+                                onClick={() => handlePauseMission(mission)}
+                                className="p-2 text-yellow-400 hover:bg-slate-600 rounded transition-colors group relative"
+                                title="Pause Mission"
+                              >
+                                <Pause size={18} className="fill-current" />
+                                <span className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-xs text-white rounded whitespace-nowrap z-10">
+                                  Pause Mission
+                                </span>
+                              </button>
+                            )}
+                            
+                            {/* 🆕 COMPLETE BUTTON - Show for active/paused missions */}
+                            {(mission.status?.toLowerCase() === 'active' || 
+                              mission.status?.toLowerCase() === 'in_progress' || 
+                              mission.status?.toLowerCase() === 'paused') && (
+                              <button
+                                onClick={() => handleCompleteMission(mission)}
+                                className="p-2 text-green-500 hover:bg-slate-600 rounded transition-colors group relative"
+                                title="Complete Mission"
+                              >
+                                <CheckCircle size={18} />
+                                <span className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-xs text-white rounded whitespace-nowrap z-10">
+                                  Complete Mission
+                                </span>
+                              </button>
+                            )}
+
+                            {/* VIEW BUTTON - Always visible */}
                             <button
                               onClick={() => handleViewMission(mission)}
                               className="p-2 text-blue-400 hover:bg-slate-600 rounded transition-colors"
@@ -457,20 +557,31 @@ export default function MissionListComponent({ onPageChange, onEditMission, onVi
                             >
                               <Eye size={18} />
                             </button>
-                            <button
-                              onClick={() => handleEditMission(mission)}
-                              className="p-2 text-yellow-400 hover:bg-slate-600 rounded transition-colors"
-                              title="Edit Mission"
-                            >
-                              <Edit size={18} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(mission.id, mission.mission_name)}
-                              className="p-2 text-red-400 hover:bg-slate-600 rounded transition-colors"
-                              title="Delete Mission"
-                            >
-                              <Trash2 size={18} />
-                            </button>
+                            
+                            {/* EDIT BUTTON - Only for non-active missions */}
+                            {mission.status?.toLowerCase() !== 'active' && 
+                             mission.status?.toLowerCase() !== 'in_progress' && (
+                              <button
+                                onClick={() => handleEditMission(mission)}
+                                className="p-2 text-yellow-400 hover:bg-slate-600 rounded transition-colors"
+                                title="Edit Mission"
+                              >
+                                <Edit size={18} />
+                              </button>
+                            )}
+                            
+                            {/* DELETE BUTTON - Only for draft/completed/failed missions */}
+                            {(mission.status?.toLowerCase() === 'draft' || 
+                              mission.status?.toLowerCase() === 'completed' || 
+                              mission.status?.toLowerCase() === 'failed') && (
+                              <button
+                                onClick={() => handleDelete(mission.id, mission.mission_name)}
+                                className="p-2 text-red-400 hover:bg-slate-600 rounded transition-colors"
+                                title="Delete Mission"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
