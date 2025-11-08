@@ -1,45 +1,101 @@
 'use client'
 
-import { useState } from 'react'
-import { Search, Filter, Plus, AlertTriangle } from 'lucide-react'
-import { missionsData } from '@/lib/data'
-import { Mission } from '@/types'
+import { useState, useEffect } from 'react'
+import { Search, Plus, AlertTriangle, Trash2, Edit, Eye, Loader2, RefreshCw, Filter } from 'lucide-react'
+import { getMissions, deleteMission, type ApiMission, type PaginatedResponse } from '@/services/missionService'
 
-interface MissionListProps {
+interface MissionListComponentProps {
   onPageChange?: (page: string) => void
+  onEditMission?: (mission: ApiMission) => void
+  onViewMission?: (mission: ApiMission) => void
 }
 
-export default function MissionList({ onPageChange }: MissionListProps) {
-  const [filter, setFilter] = useState<string>('All')
+export default function MissionListComponent({ onPageChange, onEditMission, onViewMission }: MissionListComponentProps) {
+  // State management
+  const [missions, setMissions] = useState<ApiMission[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [totalMissions, setTotalMissions] = useState(0)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [refreshing, setRefreshing] = useState(false)
+  const itemsPerPage = 10
 
-  const getStatusColor = (status: Mission['status']): string => {
-    switch (status) {
-      case 'In Flight': return 'bg-green-500'
-      case 'Completed': return 'bg-green-500'
-      case 'Pending': return 'bg-purple-500'
-      case 'Low Battery': return 'bg-yellow-500'
-      case 'Failed': return 'bg-red-500'
-      default: return 'bg-gray-500'
+  // Load missions on component mount and when filters change
+  useEffect(() => {
+    loadMissions()
+  }, [filter, searchQuery, currentPage])
+
+  const loadMissions = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const params: any = {
+        skip: (currentPage - 1) * itemsPerPage,
+        limit: itemsPerPage,
+      }
+
+      if (filter !== 'all') {
+        params.status = filter
+      }
+
+      if (searchQuery.trim()) {
+        params.search = searchQuery.trim()
+      }
+
+      const response = await getMissions(params)
+      
+      // Handle different API response formats
+      if (response && typeof response === 'object') {
+        // Check if response has missions array and total count
+        if ('missions' in response && Array.isArray(response.missions)) {
+          setMissions(response.missions)
+          setTotalMissions(response.total || response.missions.length)
+        } 
+        // If response is directly an array
+        else if (Array.isArray(response)) {
+          setMissions(response)
+          setTotalMissions(response.length)
+        }
+        // If response is paginated response
+        else {
+          setMissions([])
+          setTotalMissions(0)
+        }
+      } else {
+        setMissions([])
+        setTotalMissions(0)
+      }
+      
+      console.log('Loaded missions:', response) // Debug log
+    } catch (err: any) {
+      setError(err.message || 'Failed to load missions')
+      console.error('Error loading missions:', err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const getTypeColor = (type: string): string => {
-    switch (type) {
-      case 'Surveillance': return 'bg-blue-600'
-      case 'Logistics': return 'bg-orange-700'
-      case 'Agriculture': return 'bg-green-600'
-      case 'Emergency': return 'bg-red-700'
-      case 'Inspection': return 'bg-purple-600'
-      default: return 'bg-gray-600'
-    }
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await loadMissions()
+    setRefreshing(false)
   }
 
-  const filteredMissions = missionsData.filter(mission => {
-    if (filter !== 'All' && mission.status !== filter) return false
-    if (searchQuery && !mission.name.toLowerCase().includes(searchQuery.toLowerCase())) return false
-    return true
-  })
+  const handleDelete = async (id: number, missionName: string) => {
+    if (!confirm(`Are you sure you want to delete mission "${missionName}"?`)) {
+      return
+    }
+
+    try {
+      await deleteMission(id)
+      await loadMissions() // Reload the list
+    } catch (err: any) {
+      alert('Failed to delete mission: ' + err.message)
+    }
+  }
 
   const handlePlanMission = () => {
     if (onPageChange) {
@@ -47,36 +103,152 @@ export default function MissionList({ onPageChange }: MissionListProps) {
     }
   }
 
+  const handleViewMission = (mission: ApiMission) => {
+    if (onViewMission) {
+      onViewMission(mission)
+    }
+  }
+
+  const handleEditMission = (mission: ApiMission) => {
+    if (onEditMission) {
+      onEditMission(mission)
+    }
+  }
+
+  // Status color mapping
+  const getStatusColor = (status: string): string => {
+    const statusLower = status.toLowerCase()
+    switch (statusLower) {
+      case 'completed': return 'bg-green-500'
+      case 'active':
+      case 'in_progress':
+      case 'in flight': return 'bg-blue-500'
+      case 'pending':
+      case 'draft': return 'bg-purple-500'
+      case 'failed':
+      case 'error': return 'bg-red-500'
+      case 'paused': return 'bg-yellow-500'
+      default: return 'bg-gray-500'
+    }
+  }
+
+  // Mission type color mapping
+  const getTypeColor = (type: string | null): string => {
+    if (!type) return 'bg-gray-600'
+    const typeLower = type.toLowerCase()
+    switch (typeLower) {
+      case 'surveillance': return 'bg-blue-600'
+      case 'logistics': return 'bg-orange-700'
+      case 'agriculture': return 'bg-green-600'
+      case 'emergency': return 'bg-red-700'
+      case 'inspection': return 'bg-purple-600'
+      case 'mapping': return 'bg-indigo-600'
+      case 'delivery': return 'bg-yellow-600'
+      default: return 'bg-gray-600'
+    }
+  }
+
+  // Format date
+  const formatDate = (dateString: string): string => {
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric' 
+      })
+    } catch {
+      return 'N/A'
+    }
+  }
+
+  // Format time
+  const formatTime = (dateString: string): string => {
+    try {
+      const date = new Date(dateString)
+      return date.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false
+      }) + ' UTC'
+    } catch {
+      return 'N/A'
+    }
+  }
+
+  // Calculate time ago
+  const getTimeAgo = (dateString: string): string => {
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffMs = now.getTime() - date.getTime()
+      const diffMins = Math.floor(diffMs / 60000)
+      const diffHours = Math.floor(diffMins / 60)
+      const diffDays = Math.floor(diffHours / 24)
+
+      if (diffMins < 60) return `${diffMins}m ago`
+      if (diffHours < 24) return `${diffHours}h ago`
+      return `${diffDays}d ago`
+    } catch {
+      return 'N/A'
+    }
+  }
+
+  // Pagination
+  const totalPages = totalMissions > 0 ? Math.ceil(totalMissions / itemsPerPage) : 1
+  const pages = Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i + 1)
+
+  // Filter tabs
+  const filterTabs = [
+    { value: 'all', label: 'All' },
+    { value: 'draft', label: 'Draft' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'active', label: 'Active' },
+    { value: 'completed', label: 'Completed' },
+    { value: 'failed', label: 'Failed' }
+  ]
+
   return (
     <div className="flex-1 bg-slate-900 min-h-screen">
       <div className="p-8">
+        {/* Header Section */}
         <div className="bg-blue-600 rounded-xl p-6 mb-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-3xl font-bold text-white mb-2">Mission List</h1>
               <p className="text-blue-100">Manage and monitor all UAV missions</p>
             </div>
-            <div className="bg-slate-900 px-6 py-3 rounded-lg shadow-lg">
-              <div className="text-slate-400 text-sm">Total Missions</div>
-              <div className="text-3xl font-bold text-center text-white">24</div>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="p-3 bg-slate-800 rounded-lg text-white hover:bg-slate-700 transition-colors disabled:opacity-50"
+                title="Refresh"
+              >
+                <RefreshCw size={20} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+              <div className="bg-slate-900 px-6 py-3 rounded-lg shadow-lg">
+                <div className="text-slate-400 text-sm">Total Missions</div>
+                <div className="text-3xl font-bold text-center text-white">{totalMissions}</div>
+              </div>
             </div>
           </div>
 
+          {/* Search and Actions Bar */}
           <div className="flex items-center space-x-4">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
               <input
                 type="text"
-                placeholder="Search Missions..."
+                placeholder="Search missions by name..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setCurrentPage(1) // Reset to first page on search
+                }}
                 className="w-full pl-10 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
             </div>
-            <button className="flex items-center space-x-2 px-6 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white hover:bg-slate-700 transition-colors">
-              <Filter size={20} />
-              <span>Filters</span>
-            </button>
             <button 
               onClick={handlePlanMission} 
               className="flex items-center space-x-2 px-6 py-3 bg-white text-blue-600 font-semibold rounded-lg hover:bg-blue-50 transition-colors shadow-lg"
@@ -87,105 +259,220 @@ export default function MissionList({ onPageChange }: MissionListProps) {
           </div>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="bg-red-500 bg-opacity-10 border border-red-500 rounded-lg p-4 mb-6">
+            <div className="flex items-center space-x-2 text-red-500">
+              <AlertTriangle size={20} />
+              <span className="font-medium">{error}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Missions Table */}
         <div className="bg-slate-800 rounded-xl overflow-hidden shadow-xl">
+          {/* Filter Tabs */}
           <div className="flex border-b border-slate-700">
-            {['All', 'Active', 'Completed', 'Pending', 'Failed'].map((tab) => (
+            {filterTabs.map((tab) => (
               <button
-                key={tab}
-                onClick={() => setFilter(tab)}
+                key={tab.value}
+                onClick={() => {
+                  setFilter(tab.value)
+                  setCurrentPage(1) // Reset to first page on filter change
+                }}
                 className={`px-8 py-4 font-medium transition-colors ${
-                  filter === tab
+                  filter === tab.value
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-white hover:bg-slate-700'
                 }`}
               >
-                {tab}
+                {tab.label}
               </button>
             ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-700">
-                <tr>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Mission ID</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Name</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Type</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Vehicle</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Status</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Progress</th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700">
-                {filteredMissions.map((mission) => (
-                  <tr key={mission.id} className="hover:bg-slate-700 transition-colors">
-                    <td className="px-6 py-4">
-                      <div>
-                        <div className="text-white font-semibold">{mission.id}</div>
-                        <div className="text-slate-400 text-xs mt-1">Created {mission.created}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-white font-medium">{mission.name}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`${getTypeColor(mission.type)} px-3 py-1 rounded-full text-white text-sm font-medium`}>
-                        {mission.type}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div>
-                        <div className="text-white">{mission.vehicle}</div>
-                        <div className="text-slate-400 text-sm">{mission.operator}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-2">
-                        <div className={`w-2 h-2 ${getStatusColor(mission.status)} rounded-full`}></div>
-                        <span className="text-white">{mission.status}</span>
-                        {mission.alert && <AlertTriangle size={16} className="text-yellow-500" />}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="flex-1 bg-slate-700 rounded-full h-2">
-                          <div 
-                            className="bg-blue-500 h-2 rounded-full transition-all duration-300" 
-                            style={{ width: `${mission.progress}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-white font-medium text-sm w-12">{mission.progress}%</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div>
-                        <div className="text-white">{mission.date}</div>
-                        <div className="text-slate-400 text-sm">{mission.time}</div>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="flex items-center justify-between px-6 py-4 border-t border-slate-700">
-            <div className="text-slate-400 text-sm">Showing {filteredMissions.length} of 24 missions</div>
-            <div className="flex items-center space-x-2">
-              <button className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">
-                Previous
-              </button>
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg">1</button>
-              <button className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">2</button>
-              <button className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">3</button>
-              <span className="px-2 text-slate-400">...</span>
-              <button className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">5</button>
-              <button className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors">
-                Next
-              </button>
+          {/* Loading State */}
+          {loading && (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 size={40} className="text-blue-500 animate-spin" />
+              <span className="ml-3 text-slate-400 text-lg">Loading missions...</span>
             </div>
-          </div>
+          )}
+
+          {/* Empty State */}
+          {!loading && missions.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <AlertTriangle size={48} className="text-slate-600 mb-4" />
+              <p className="text-slate-400 text-lg mb-2">No missions found</p>
+              <p className="text-slate-500 text-sm">
+                {searchQuery ? 'Try adjusting your search' : 'Create your first mission to get started'}
+              </p>
+            </div>
+          )}
+
+          {/* Missions Table */}
+          {!loading && missions.length > 0 && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-slate-700">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Mission ID</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Name</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Type</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Corridor</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Status</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Stats</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Created</th>
+                      <th className="px-6 py-4 text-left text-xs font-semibold text-slate-300 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700">
+                    {missions.map((mission) => (
+                      <tr key={mission.id} className="hover:bg-slate-700 transition-colors">
+                        <td className="px-6 py-4">
+                          <div>
+                            <div className="text-white font-semibold">#{mission.id}</div>
+                            <div className="text-slate-400 text-xs mt-1">{getTimeAgo(mission.created_at)}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-white font-medium">{mission.mission_name}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {mission.mission_type ? (
+                            <span className={`${getTypeColor(mission.mission_type)} px-3 py-1 rounded-full text-white text-sm font-medium inline-block`}>
+                              {mission.mission_type}
+                            </span>
+                          ) : (
+                            <span className="bg-gray-600 px-3 py-1 rounded-full text-white text-sm font-medium inline-block">
+                              No Type
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div>
+                            {mission.corridor_label ? (
+                              <>
+                                <div className="text-white">{mission.corridor_label}</div>
+                                {mission.corridor_value && (
+                                  <div className="text-slate-400 text-sm">{mission.corridor_value}</div>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-slate-500">No corridor</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center space-x-2">
+                            <div className={`w-2 h-2 ${getStatusColor(mission.status)} rounded-full`}></div>
+                            <span className="text-white capitalize">{mission.status}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm">
+                            <div className="text-white">
+                              {mission.total_distance ? `${mission.total_distance.toFixed(2)} km` : 'N/A'}
+                            </div>
+                            <div className="text-slate-400">
+                              {mission.flight_time ? `${mission.flight_time.toFixed(1)} min` : 'N/A'}
+                            </div>
+                            <div className="text-slate-400">
+                              {mission.battery_usage ? `${mission.battery_usage.toFixed(1)}% battery` : 'N/A'}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div>
+                            <div className="text-white">{formatDate(mission.created_at)}</div>
+                            <div className="text-slate-400 text-sm">{formatTime(mission.created_at)}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => handleViewMission(mission)}
+                              className="p-2 text-blue-400 hover:bg-slate-600 rounded transition-colors"
+                              title="View Mission"
+                            >
+                              <Eye size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleEditMission(mission)}
+                              className="p-2 text-yellow-400 hover:bg-slate-600 rounded transition-colors"
+                              title="Edit Mission"
+                            >
+                              <Edit size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(mission.id, mission.mission_name)}
+                              className="p-2 text-red-400 hover:bg-slate-600 rounded transition-colors"
+                              title="Delete Mission"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              <div className="flex items-center justify-between px-6 py-4 border-t border-slate-700">
+                <div className="text-slate-400 text-sm">
+                  Showing {totalMissions > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} to {totalMissions > 0 ? Math.min(currentPage * itemsPerPage, totalMissions) : 0} of {totalMissions} missions
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  
+                  {pages.slice(0, 5).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-4 py-2 rounded-lg transition-colors ${
+                        currentPage === page
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-700 text-white hover:bg-slate-600'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                  
+                  {totalPages > 5 && (
+                    <>
+                      {currentPage < totalPages - 2 && <span className="px-2 text-slate-400">...</span>}
+                      {currentPage < totalPages - 1 && (
+                        <button
+                          onClick={() => setCurrentPage(totalPages)}
+                          className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+                        >
+                          {totalPages}
+                        </button>
+                      )}
+                    </>
+                  )}
+                  
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

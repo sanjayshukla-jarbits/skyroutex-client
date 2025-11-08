@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Sidebar from './Sidebar'
+import DashboardAnalytics from './DashboardAnalytics'
 import MissionList from './MissionList'
 import MissionTypes from './MissionTypes'
 import RoutePlanning from './RoutePlanning'
@@ -19,7 +20,7 @@ export default function DashboardLayout() {
   return (
     <div className="flex min-h-screen bg-slate-900">
       <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
-      {currentPage === 'dashboard' && <MissionList onPageChange={setCurrentPage} />}
+      {currentPage === 'dashboard' && <DashboardAnalytics />}
       {currentPage === 'missions' && <MissionList onPageChange={setCurrentPage} />}
       {currentPage === 'plan-mission' && <RoutePlanning />}
       {currentPage === 'mission-types' && <MissionTypes onPageChange={setCurrentPage} />}

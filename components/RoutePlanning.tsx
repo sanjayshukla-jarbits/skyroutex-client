@@ -5,6 +5,7 @@ import { CheckCircle, MapPin, Plus, X, Map as MapIcon, Search, ChevronLeft, Chev
 import dynamic from 'next/dynamic'
 import Select from 'react-select'
 import { Waypoint } from '@/types'
+import { createMission } from '@/services/missionService'
 
 // Dynamically import map component to avoid SSR issues
 const MapComponent = dynamic(() => import('./MapComponent'), { 
@@ -52,6 +53,13 @@ export default function RoutePlanning() {
 
   // Corridor state
   const [selectedCorridor, setSelectedCorridor] = useState<CorridorOption | null>(corridorOptions[0])
+
+  // Save Mission states - ADDED
+  const [showSaveDialog, setShowSaveDialog] = useState(false)
+  const [missionName, setMissionName] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
 
   const [waypoints, setWaypoints] = useState<Waypoint[]>([
     { 
@@ -433,6 +441,62 @@ export default function RoutePlanning() {
     return 'text-green-400'
   }
 
+  // Save mission to database via API - CORRECTED
+  const saveMission = async () => {
+    if (!missionName.trim()) {
+      setSaveError('Please enter a mission name')
+      return
+    }
+
+    setIsSaving(true)
+    setSaveError(null)
+    setSaveSuccess(false)
+
+    try {
+      const missionData = {
+        missionName: missionName.trim(),
+        missionType: 'Route Planning',
+        corridor: selectedCorridor,
+        missionStats: {
+          totalDistance: missionStats.totalDistance,
+          flightTime: missionStats.flightTime,
+          batteryUsage: missionStats.batteryUsage,
+        },
+        waypoints: waypoints.map(wp => ({
+          id: wp.id,
+          label: wp.label,
+          coords: wp.coords,
+          alt: wp.alt,
+          color: wp.color,
+          lat: wp.lat,
+          lon: wp.lon,
+        })),
+        createdBy: 'current_user', // Replace with actual user from auth
+        notes: '',
+        vehicleId: null,
+        operatorId: null,
+      }
+
+      const result = await createMission(missionData)
+
+      setSaveSuccess(true)
+      setShowSaveDialog(false)
+      setMissionName('')
+      
+      // Show success message for 3 seconds
+      setTimeout(() => {
+        setSaveSuccess(false)
+      }, 3000)
+
+      console.log('Mission saved successfully:', result)
+    } catch (error: any) {
+      console.error('Error saving mission:', error)
+      setSaveError(error.message || 'Failed to save mission')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   return (
     <div className="flex-1 bg-slate-900 h-screen flex flex-col">
       {/* Header */}
@@ -450,11 +514,90 @@ export default function RoutePlanning() {
             <CheckCircle size={18} />
             <span>Validate</span>
           </button>
-          <button className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-lg text-sm">
+          <button 
+            onClick={() => setShowSaveDialog(true)}
+            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors shadow-lg text-sm"
+          >
             <span>Save Mission</span>
           </button>
         </div>
       </div>
+
+      {/* Success Message - ADDED */}
+      {saveSuccess && (
+        <div className="absolute top-20 right-6 bg-green-600 text-white px-6 py-3 rounded-lg shadow-xl z-50 flex items-center space-x-2 animate-fade-in">
+          <CheckCircle size={20} />
+          <span className="font-semibold">Mission saved successfully!</span>
+        </div>
+      )}
+
+      {/* Save Mission Dialog - ADDED */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-xl p-6 w-96 shadow-2xl border border-slate-700">
+            <h2 className="text-xl font-bold text-white mb-4">Save Mission</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-slate-300 text-sm mb-2 block">Mission Name</label>
+                <input
+                  type="text"
+                  value={missionName}
+                  onChange={(e) => setMissionName(e.target.value)}
+                  placeholder="Enter mission name..."
+                  className="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:outline-none focus:border-blue-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="bg-slate-700 rounded-lg p-3 text-sm">
+                <div className="text-slate-400 mb-2">Mission Summary:</div>
+                <div className="text-white space-y-1">
+                  <div>• Route: {waypoints[0]?.label.replace('Start: ', '')} → {waypoints[waypoints.length - 1]?.label.replace('End: ', '')}</div>
+                  <div>• Waypoints: {waypoints.length}</div>
+                  <div>• Distance: {missionStats.totalDistance} km</div>
+                  <div>• Duration: {formatFlightTime(missionStats.flightTime)}</div>
+                  <div>• Corridor: {selectedCorridor?.label || 'Not selected'}</div>
+                </div>
+              </div>
+
+              {saveError && (
+                <div className="bg-red-900 bg-opacity-30 border border-red-500 text-red-400 px-4 py-2 rounded-lg text-sm">
+                  {saveError}
+                </div>
+              )}
+
+              <div className="flex space-x-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowSaveDialog(false)
+                    setMissionName('')
+                    setSaveError(null)
+                  }}
+                  disabled={isSaving}
+                  className="flex-1 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveMission}
+                  disabled={isSaving || !missionName.trim()}
+                  className="flex-1 px-4 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {isSaving ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Mission'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content - Full Height Map with Sidebar */}
       <div className="flex-1 relative overflow-hidden">
@@ -479,7 +622,7 @@ export default function RoutePlanning() {
 
           {/* Sidebar Content */}
           <div className={`h-full overflow-y-auto p-4 space-y-4 ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
-            {/* Corridor Selection - NEW FEATURE */}
+            {/* Corridor Selection */}
             <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-4 border border-slate-700 shadow-xl">
               <div className="flex items-center space-x-2 mb-3">
                 <MapIcon className="text-blue-400" size={18} />
