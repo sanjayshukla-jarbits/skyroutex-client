@@ -1,4 +1,3 @@
-// services/missionService.ts
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export interface GetMissionsParams {
@@ -143,19 +142,16 @@ class MissionService {
 export const missionService = new MissionService()
 
 // Helper function to transform frontend data to backend format
-// ⚠️ FIXED: Keep corridor as nested object, don't flatten it
 const transformMissionData = (data: any) => {
   return {
     mission_name: data.missionName || data.mission_name,
     mission_type: data.missionType || data.mission_type,
-    // ✅ KEEP CORRIDOR AS NESTED OBJECT - Backend expects this structure
     corridor: data.corridor ? {
       value: data.corridor.value,
       label: data.corridor.label,
       color: data.corridor.color,
       description: data.corridor.description,
     } : null,
-    // ✅ KEEP MISSION_STATS AS NESTED OBJECT
     mission_stats: data.mission_stats || data.missionStats ? {
       total_distance: data.mission_stats?.total_distance || data.missionStats?.totalDistance || 0,
       flight_time: data.mission_stats?.flight_time || data.missionStats?.flightTime || 0,

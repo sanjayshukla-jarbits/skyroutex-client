@@ -132,19 +132,72 @@ export default function MissionListComponent({ onPageChange, onEditMission, onVi
     }
   }
 
-  // Mission type color mapping
+  // ✅ ENHANCED: Mission type color mapping with more types
   const getTypeColor = (type: string | null): string => {
     if (!type) return 'bg-gray-600'
     const typeLower = type.toLowerCase()
     switch (typeLower) {
+      // Surveillance & Security
       case 'surveillance': return 'bg-blue-600'
+      case 'border surveillance': return 'bg-blue-700'
+      case 'security patrol': return 'bg-cyan-600'
+      
+      // Route & Planning
+      case 'route planning': return 'bg-indigo-600'
+      case 'waypoint mission': return 'bg-indigo-500'
+      case 'navigation': return 'bg-violet-600'
+      
+      // Logistics & Delivery
       case 'logistics': return 'bg-orange-700'
-      case 'agriculture': return 'bg-green-600'
-      case 'emergency': return 'bg-red-700'
-      case 'inspection': return 'bg-purple-600'
-      case 'mapping': return 'bg-indigo-600'
       case 'delivery': return 'bg-yellow-600'
+      case 'supply drop': return 'bg-amber-600'
+      
+      // Agriculture
+      case 'agriculture': return 'bg-green-600'
+      case 'crop monitoring': return 'bg-lime-600'
+      case 'spraying': return 'bg-emerald-600'
+      
+      // Emergency & Response
+      case 'emergency': return 'bg-red-700'
+      case 'search and rescue': return 'bg-red-600'
+      case 'disaster response': return 'bg-rose-700'
+      
+      // Inspection & Maintenance
+      case 'inspection': return 'bg-purple-600'
+      case 'infrastructure inspection': return 'bg-purple-500'
+      case 'maintenance': return 'bg-fuchsia-600'
+      
+      // Mapping & Survey
+      case 'mapping': return 'bg-teal-600'
+      case 'surveying': return 'bg-sky-600'
+      case '3d mapping': return 'bg-cyan-700'
+      case 'photogrammetry': return 'bg-blue-500'
+      
+      // Training & Testing
+      case 'training': return 'bg-slate-600'
+      case 'testing': return 'bg-gray-600'
+      case 'demonstration': return 'bg-zinc-600'
+      
       default: return 'bg-gray-600'
+    }
+  }
+
+  // ✅ NEW: Convert corridor color name to Tailwind class
+  const getCorridorBgColor = (color: string | null): string => {
+    if (!color) return 'bg-gray-500'
+    const colorLower = color.toLowerCase()
+    switch (colorLower) {
+      case 'blue': return 'bg-blue-500'
+      case 'green': return 'bg-green-500'
+      case 'orange': return 'bg-orange-500'
+      case 'purple': return 'bg-purple-500'
+      case 'yellow': return 'bg-yellow-500'
+      case 'red': return 'bg-red-500'
+      case 'pink': return 'bg-pink-500'
+      case 'indigo': return 'bg-indigo-500'
+      case 'cyan': return 'bg-cyan-500'
+      case 'teal': return 'bg-teal-500'
+      default: return 'bg-gray-500'
     }
   }
 
@@ -339,47 +392,53 @@ export default function MissionListComponent({ onPageChange, onEditMission, onVi
                         <td className="px-6 py-4">
                           <div className="text-white font-medium">{mission.mission_name}</div>
                         </td>
+                        {/* ✅ ENHANCED: Mission Type with gradient background */}
                         <td className="px-6 py-4">
                           {mission.mission_type ? (
-                            <span className={`${getTypeColor(mission.mission_type)} px-3 py-1 rounded-full text-white text-sm font-medium inline-block`}>
+                            <span className={`${getTypeColor(mission.mission_type)} px-3 py-1.5 rounded-full text-white text-xs font-semibold inline-block shadow-md`}>
                               {mission.mission_type}
                             </span>
                           ) : (
-                            <span className="bg-gray-600 px-3 py-1 rounded-full text-white text-sm font-medium inline-block">
+                            <span className="bg-gray-600 px-3 py-1.5 rounded-full text-white text-xs font-semibold inline-block">
                               No Type
                             </span>
                           )}
                         </td>
+                        {/* ✅ ENHANCED: Corridor with color indicator */}
                         <td className="px-6 py-4">
                           <div>
                             {mission.corridor_label ? (
-                              <>
-                                <div className="text-white">{mission.corridor_label}</div>
-                                {mission.corridor_value && (
-                                  <div className="text-slate-400 text-sm">{mission.corridor_value}</div>
-                                )}
-                              </>
+                              <div className="flex items-center space-x-2">
+                                {/* Color indicator dot */}
+                                <div className={`w-3 h-3 rounded-full ${getCorridorBgColor(mission.corridor_color)} shadow-md`}></div>
+                                <div>
+                                  <div className="text-white font-medium">{mission.corridor_label}</div>
+                                  {mission.corridor_value && (
+                                    <div className="text-slate-400 text-xs mt-0.5 capitalize">{mission.corridor_value}</div>
+                                  )}
+                                </div>
+                              </div>
                             ) : (
-                              <span className="text-slate-500">No corridor</span>
+                              <span className="text-slate-500 text-sm">No corridor</span>
                             )}
                           </div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center space-x-2">
-                            <div className={`w-2 h-2 ${getStatusColor(mission.status)} rounded-full`}></div>
-                            <span className="text-white capitalize">{mission.status}</span>
+                            <div className={`w-2 h-2 ${getStatusColor(mission.status)} rounded-full animate-pulse`}></div>
+                            <span className="text-white capitalize font-medium">{mission.status}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm">
-                            <div className="text-white">
+                          <div className="text-sm space-y-1">
+                            <div className="text-white font-medium">
                               {mission.total_distance ? `${mission.total_distance.toFixed(2)} km` : 'N/A'}
                             </div>
-                            <div className="text-slate-400">
+                            <div className="text-slate-400 text-xs">
                               {mission.flight_time ? `${mission.flight_time.toFixed(1)} min` : 'N/A'}
                             </div>
-                            <div className="text-slate-400">
-                              {mission.battery_usage ? `${mission.battery_usage.toFixed(1)}% battery` : 'N/A'}
+                            <div className="text-slate-400 text-xs">
+                              {mission.battery_usage ? `${mission.battery_usage.toFixed(1)}%` : 'N/A'}
                             </div>
                           </div>
                         </td>
