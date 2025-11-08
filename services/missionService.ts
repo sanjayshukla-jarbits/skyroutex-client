@@ -1,91 +1,32 @@
-// Mission API Service for handling all mission-related HTTP requests
-
+// services/missionService.ts
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-/**
- * Convert camelCase object keys to snake_case for backend API
- */
-function toSnakeCase(obj: any): any {
-  if (obj === null || obj === undefined) return obj
-  
-  if (Array.isArray(obj)) {
-    return obj.map(item => toSnakeCase(item))
-  }
-  
-  if (typeof obj === 'object' && obj.constructor === Object) {
-    const snakeCaseObj: any = {}
-    
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
-        // Convert camelCase to snake_case
-        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
-        snakeCaseObj[snakeKey] = toSnakeCase(obj[key])
-      }
-    }
-    
-    return snakeCaseObj
-  }
-  
-  return obj
-}
-
-export interface ApiMission {
-  id: number
-  mission_name: string
-  mission_type: string | null
-  corridor_value: string | null
-  corridor_label: string | null
-  corridor_color: string | null
-  corridor_description: string | null
-  total_distance: number | null
-  flight_time: number | null
-  battery_usage: number | null
-  waypoints: any[]
-  status: string
-  created_at: string
-  updated_at: string
-  created_by: string | null
-  notes: string | null
-  vehicle_id: string | null
-  operator_id: string | null
-}
-
 export interface GetMissionsParams {
-  skip?: number
-  limit?: number
   status?: string
-  search?: string
-}
-
-export interface PaginatedResponse {
-  total: number
-  skip: number
-  limit: number
-  missions: ApiMission[]
+  corridor?: string
+  mission_type?: string
+  created_by?: string
+  limit?: number
+  offset?: number
 }
 
 class MissionService {
-  private baseUrl: string
-
-  constructor() {
-    this.baseUrl = `${API_BASE_URL}/api/missions`
-  }
-
   /**
-   * Get all missions with optional filters and pagination
+   * Get all missions with optional filters
    */
-  async getMissions(params: GetMissionsParams = {}): Promise<PaginatedResponse | any> {
-    const { skip = 0, limit = 50, status, search } = params
+  async getMissions(params?: GetMissionsParams): Promise<any> {
+    const queryParams = new URLSearchParams()
     
-    const queryParams = new URLSearchParams({
-      skip: skip.toString(),
-      limit: limit.toString(),
-    })
+    if (params?.status) queryParams.append('status', params.status)
+    if (params?.corridor) queryParams.append('corridor', params.corridor)
+    if (params?.mission_type) queryParams.append('mission_type', params.mission_type)
+    if (params?.created_by) queryParams.append('created_by', params.created_by)
+    if (params?.limit) queryParams.append('limit', params.limit.toString())
+    if (params?.offset) queryParams.append('offset', params.offset.toString())
 
-    if (status) queryParams.append('status', status)
-    if (search) queryParams.append('search', search)
+    const url = `${API_BASE_URL}/api/missions${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
 
-    const response = await fetch(`${this.baseUrl}?${queryParams.toString()}`, {
+    const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -97,31 +38,14 @@ class MissionService {
       throw new Error(error.detail || 'Failed to fetch missions')
     }
 
-    const data = await response.json()
-    
-    // Handle different response formats
-    // If API returns paginated response: { total, skip, limit, missions }
-    if (data && typeof data === 'object' && 'missions' in data) {
-      return data
-    }
-    // If API returns just an array of missions
-    else if (Array.isArray(data)) {
-      return {
-        total: data.length,
-        skip: skip,
-        limit: limit,
-        missions: data
-      }
-    }
-    // Default case
-    return data
+    return response.json()
   }
 
   /**
    * Get a single mission by ID
    */
-  async getMissionById(id: number): Promise<ApiMission> {
-    const response = await fetch(`${this.baseUrl}/${id}`, {
+  async getMissionById(id: number): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/missions/${id}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -129,8 +53,8 @@ class MissionService {
     })
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Failed to fetch mission' }))
-      throw new Error(error.detail || 'Failed to fetch mission')
+      const error = await response.json().catch(() => ({ detail: 'Mission not found' }))
+      throw new Error(error.detail || 'Mission not found')
     }
 
     return response.json()
@@ -139,18 +63,13 @@ class MissionService {
   /**
    * Create a new mission
    */
-  async createMission(missionData: any): Promise<ApiMission> {
-    // Transform camelCase to snake_case for backend
-    const transformedData = toSnakeCase(missionData)
-    
-    console.log('Sending to API:', transformedData) // Debug log
-    
-    const response = await fetch(this.baseUrl, {
+  async createMission(mission: any): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/missions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(transformedData),
+      body: JSON.stringify(mission),
     })
 
     if (!response.ok) {
@@ -164,16 +83,13 @@ class MissionService {
   /**
    * Update an existing mission
    */
-  async updateMission(id: number, missionData: Partial<any>): Promise<ApiMission> {
-    // Transform camelCase to snake_case for backend
-    const transformedData = toSnakeCase(missionData)
-    
-    const response = await fetch(`${this.baseUrl}/${id}`, {
+  async updateMission(id: number, updates: Partial<any>): Promise<any> {
+    const response = await fetch(`${API_BASE_URL}/api/missions/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(transformedData),
+      body: JSON.stringify(updates),
     })
 
     if (!response.ok) {
@@ -188,7 +104,7 @@ class MissionService {
    * Delete a mission
    */
   async deleteMission(id: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/${id}`, {
+    const response = await fetch(`${API_BASE_URL}/api/missions/${id}`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -227,18 +143,25 @@ class MissionService {
 export const missionService = new MissionService()
 
 // Helper function to transform frontend data to backend format
+// ⚠️ FIXED: Keep corridor as nested object, don't flatten it
 const transformMissionData = (data: any) => {
   return {
     mission_name: data.missionName || data.mission_name,
     mission_type: data.missionType || data.mission_type,
-    corridor_value: data.corridor?.value,
-    corridor_label: data.corridor?.label,
-    corridor_color: data.corridor?.color,
-    corridor_description: data.corridor?.description,
-    total_distance: data.missionStats?.totalDistance || data.total_distance,
-    flight_time: data.missionStats?.flightTime || data.flight_time,
-    battery_usage: data.missionStats?.batteryUsage || data.battery_usage,
-    waypoints: data.waypoints,
+    // ✅ KEEP CORRIDOR AS NESTED OBJECT - Backend expects this structure
+    corridor: data.corridor ? {
+      value: data.corridor.value,
+      label: data.corridor.label,
+      color: data.corridor.color,
+      description: data.corridor.description,
+    } : null,
+    // ✅ KEEP MISSION_STATS AS NESTED OBJECT
+    mission_stats: data.mission_stats || data.missionStats ? {
+      total_distance: data.mission_stats?.total_distance || data.missionStats?.totalDistance || 0,
+      flight_time: data.mission_stats?.flight_time || data.missionStats?.flightTime || 0,
+      battery_usage: data.mission_stats?.battery_usage || data.missionStats?.batteryUsage || 0,
+    } : null,
+    waypoints: data.waypoints || [],
     status: data.status || 'draft',
     created_by: data.createdBy || data.created_by,
     notes: data.notes || '',
