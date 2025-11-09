@@ -435,7 +435,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     
     handleCommand(
         '/api/v1/vehicle/arm',
-        { mission_id: currentMissionId, force_arm: false },
+        { mission_id: String(currentMissionId), force_arm: false },
         'arm',
         'Vehicle armed successfully'
     );
@@ -450,7 +450,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     
     handleCommand(
         '/api/v1/vehicle/disarm',
-        { mission_id: currentMissionId },
+        { mission_id: String(currentMissionId) },
         'disarm',
         'Vehicle disarmed successfully'
     );
@@ -459,7 +459,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   const handleTakeoff = () => {
     handleCommand(
       '/api/v1/vehicle/takeoff',
-      { mission_id: currentMissionId, altitude: takeoffAltitude },
+      { mission_id: String(currentMissionId), altitude: takeoffAltitude },
       'takeoff',
       `Takeoff initiated to ${takeoffAltitude}m`
     );
@@ -468,7 +468,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   const handleLand = () => {
     handleCommand(
       '/api/v1/vehicle/land',
-      { mission_id: currentMissionId },
+      { mission_id: String(currentMissionId) },
       'land',
       'Landing initiated'
     );
@@ -477,7 +477,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   const handleRTL = () => {
     handleCommand(
       '/api/v1/vehicle/rtl',
-      { mission_id: currentMissionId },
+      { mission_id: String(currentMissionId) },
       'rtl',
       'Return to launch initiated'
     );
