@@ -634,7 +634,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
             )}
             <div className="flex items-center gap-6">
               <div>
-                <h1 className="text-2xl font-bold text-white">🚁 Drone Flight Monitor</h1>
+                <h1 className="text-2xl font-bold text-white">Mission Monitor</h1>
                 {selectedMission && (
                   <p className="text-sm text-gray-400 mt-1">
                     Mission: {selectedMission.name}
@@ -647,7 +647,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
               {selectedMission && (
                 <div className="flex items-center gap-4 px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">ID:</span>
+                    <span className="text-xs text-gray-400">Mission ID:</span>
                     <span className="text-sm font-mono text-blue-400 font-semibold">{selectedMission.id}</span>
                   </div>
                   <div className="h-4 w-px bg-gray-700"></div>
@@ -918,7 +918,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
 
         {/* Control Panel */}
         <div className="w-96 bg-gray-900 border-l border-gray-800 p-6 overflow-y-auto">
-          <h2 className="text-xl font-bold text-white mb-6">Mission Control</h2>
+          <h2 className="text-xl font-bold text-white mb-6">Mission Controls</h2>
 
           {/* Mission ID Input */}
           <div className="mb-6">
