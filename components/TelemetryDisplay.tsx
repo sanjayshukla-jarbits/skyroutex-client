@@ -1,28 +1,56 @@
-/**
- * Enhanced Live Telemetry Display Component
- * 
- * This is a comprehensive telemetry display for the DroneFlightVisualization component.
- * It shows real-time drone status, position, velocity, attitude, battery, GPS, 
- * geofence, and vehicle information.
- * 
- * Usage: Replace the existing telemetry display div in DroneFlightVisualization.tsx
- */
-
 import React from 'react';
 
 interface TelemetryDisplayProps {
   telemetry: any;
   status: any;
   wsConnected: boolean;
+  lastUpdate?: number;
+  updateFrequency?: number;
+  isPulsing?: boolean;
 }
 
 export const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
   telemetry,
   status,
-  wsConnected
+  wsConnected,
+  lastUpdate,
+  updateFrequency = 0,
+  isPulsing = false
 }) => {
+  
+  // Helper function to format time ago
+  const formatTimeAgo = (timestamp?: number): string => {
+    if (!timestamp) return 'N/A';
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    if (seconds < 1) return 'Just now';
+    if (seconds === 1) return '1 second ago';
+    if (seconds < 60) return `${seconds} seconds ago`;
+    
+    const minutes = Math.floor(seconds / 60);
+    if (minutes === 1) return '1 minute ago';
+    if (minutes < 60) return `${minutes} minutes ago`;
+    
+    const hours = Math.floor(minutes / 60);
+    if (hours === 1) return '1 hour ago';
+    return `${hours} hours ago`;
+  };
+
+  // Helper to get data freshness color
+  const getDataFreshnessColor = (timestamp?: number): string => {
+    if (!timestamp) return 'text-gray-400';
+    const ageMs = Date.now() - timestamp;
+    
+    if (ageMs < 1000) return 'text-green-400';      // < 1s - Fresh
+    if (ageMs < 3000) return 'text-yellow-400';     // < 3s - Acceptable  
+    if (ageMs < 10000) return 'text-orange-400';    // < 10s - Stale
+    return 'text-red-400';                           // > 10s - Very stale
+  };
+
   return (
-    <div className="absolute top-4 right-4 bg-gray-900/95 backdrop-blur-sm rounded-lg border border-gray-700 w-[380px] max-h-[calc(100vh-120px)] overflow-y-auto z-[1000] shadow-2xl">
+    <div className={`absolute top-4 right-4 bg-gray-900/95 backdrop-blur-sm rounded-lg border ${
+      isPulsing ? 'border-green-500 shadow-lg shadow-green-500/50' : 'border-gray-700'
+    } w-[380px] max-h-[calc(100vh-120px)] overflow-y-auto z-[1000] shadow-2xl transition-all duration-200`}>
       {/* Header */}
       <div className="sticky top-0 bg-gray-900 p-4 border-b border-gray-700">
         <div className="flex items-center justify-between mb-2">
@@ -46,9 +74,16 @@ export const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
           </div>
         </div>
         
-        {/* Last Update Timestamp */}
-        <div className="text-xs text-gray-500">
-          Last Update: {status?.last_update ? new Date(status.last_update).toLocaleTimeString() : 'N/A'}
+        {/* Real-time Update Stats */}
+        <div className="flex items-center justify-between text-xs">
+          <div className={getDataFreshnessColor(lastUpdate)}>
+            {formatTimeAgo(lastUpdate)}
+          </div>
+          {updateFrequency > 0 && (
+            <div className="text-cyan-400 font-semibold">
+              {updateFrequency} Hz
+            </div>
+          )}
         </div>
       </div>
 
@@ -98,66 +133,66 @@ export const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
           </div>
         </div>
 
-        {/* Position Section */}
+        {/* Position Section - CORRECTED FIELD NAMES */}
         <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
           <h4 className="text-sm font-semibold text-gray-300 mb-2">Position</h4>
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-gray-400 text-xs w-16">Latitude:</span>
               <span className="text-white font-mono text-xs">
-                {(telemetry?.position?.latitude ?? status?.current_position?.lat ?? 0).toFixed(7)}°
+                {(telemetry?.position?.lat ?? status?.current_position?.lat ?? 0).toFixed(7)}°
               </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-gray-400 text-xs w-16">Longitude:</span>
               <span className="text-white font-mono text-xs">
-                {(telemetry?.position?.longitude ?? status?.current_position?.lon ?? 0).toFixed(7)}°
+                {(telemetry?.position?.lon ?? status?.current_position?.lon ?? 0).toFixed(7)}°
               </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-gray-400 text-xs w-16">Altitude:</span>
               <span className="text-white font-mono text-xs">
-                {(telemetry?.position?.altitude ?? status?.current_position?.alt ?? 0).toFixed(2)} m
+                {(telemetry?.position?.alt ?? status?.current_position?.alt ?? 0).toFixed(2)} m
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">AGL:</span>
+              <span className="text-gray-400 text-xs w-16">Rel Alt:</span>
               <span className="text-white font-mono text-xs">
-                {(telemetry?.position?.absolute_altitude ?? 0).toFixed(2)} m
+                {(telemetry?.position?.relative_alt ?? telemetry?.position?.alt ?? 0).toFixed(2)} m
               </span>
             </div>
           </div>
         </div>
 
-        {/* Velocity Section */}
+        {/* Velocity Section - CORRECTED FIELD NAMES */}
         {telemetry?.velocity && (
           <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
             <h4 className="text-sm font-semibold text-gray-300 mb-2">Velocity</h4>
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">North:</span>
+                <span className="text-gray-400 text-xs w-16">VX (North):</span>
                 <span className="text-white font-mono text-xs">
-                  {(telemetry.velocity.north ?? 0).toFixed(2)} m/s
+                  {(telemetry.velocity.vx ?? 0).toFixed(2)} m/s
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">East:</span>
+                <span className="text-gray-400 text-xs w-16">VY (East):</span>
                 <span className="text-white font-mono text-xs">
-                  {(telemetry.velocity.east ?? 0).toFixed(2)} m/s
+                  {(telemetry.velocity.vy ?? 0).toFixed(2)} m/s
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">Down:</span>
+                <span className="text-gray-400 text-xs w-16">VZ (Down):</span>
                 <span className="text-white font-mono text-xs">
-                  {(telemetry.velocity.down ?? 0).toFixed(2)} m/s
+                  {(telemetry.velocity.vz ?? 0).toFixed(2)} m/s
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-gray-400 text-xs w-16">Ground:</span>
                 <span className="text-cyan-400 font-mono text-xs font-semibold">
                   {Math.sqrt(
-                    Math.pow(telemetry.velocity.north ?? 0, 2) + 
-                    Math.pow(telemetry.velocity.east ?? 0, 2)
+                    Math.pow(telemetry.velocity.vx ?? 0, 2) + 
+                    Math.pow(telemetry.velocity.vy ?? 0, 2)
                   ).toFixed(2)} m/s
                 </span>
               </div>
@@ -267,7 +302,7 @@ export const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
           </div>
         </div>
 
-        {/* GPS Section */}
+        {/* GPS Section - CORRECTED FIELD NAMES */}
         {(telemetry?.gps || status?.sensors?.gps) && (
           <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
             <h4 className="text-sm font-semibold text-gray-300 mb-2">GPS</h4>
@@ -276,17 +311,17 @@ export const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
                 <span className="text-gray-400 text-xs w-20">Satellites:</span>
                 <div className="flex items-center gap-2">
                   <span className={`text-sm font-semibold ${
-                    (telemetry?.gps?.num_satellites ?? status?.sensors?.gps?.satellites ?? 0) >= 8
+                    (telemetry?.gps?.satellites ?? status?.sensors?.gps?.satellites ?? 0) >= 8
                     ? 'text-green-400'
-                    : (telemetry?.gps?.num_satellites ?? status?.sensors?.gps?.satellites ?? 0) >= 6
+                    : (telemetry?.gps?.satellites ?? status?.sensors?.gps?.satellites ?? 0) >= 6
                     ? 'text-yellow-400'
                     : 'text-red-400'
                   }`}>
-                    {telemetry?.gps?.num_satellites ?? status?.sensors?.gps?.satellites ?? 0}
+                    {telemetry?.gps?.satellites ?? status?.sensors?.gps?.satellites ?? 0}
                   </span>
                   <span className="text-gray-500 text-xs">/</span>
                   <span className="text-gray-400 text-xs">
-                    {(telemetry?.gps?.num_satellites ?? status?.sensors?.gps?.satellites ?? 0) >= 8 ? 'Good' : 'Poor'}
+                    {(telemetry?.gps?.satellites ?? status?.sensors?.gps?.satellites ?? 0) >= 8 ? 'Good' : 'Poor'}
                   </span>
                 </div>
               </div>
@@ -303,27 +338,29 @@ export const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
                    (telemetry?.gps?.fix_type ?? 0) === 2 ? '2D FIX' : 'NO FIX'}
                 </span>
               </div>
-              {status?.sensors?.gps && (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-xs w-20">HDOP:</span>
-                    <span className="text-white font-mono text-xs">
-                      {(status.sensors.gps.hdop ?? 0).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-xs w-20">VDOP:</span>
-                    <span className="text-white font-mono text-xs">
-                      {(status.sensors.gps.vdop ?? 0).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-400 text-xs w-20">Status:</span>
-                    <span className="text-green-400 text-xs font-semibold">
-                      {status.sensors.gps.status}
-                    </span>
-                  </div>
-                </>
+              {(telemetry?.gps?.hdop !== undefined || status?.sensors?.gps?.hdop !== undefined) && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs w-20">HDOP:</span>
+                  <span className="text-white font-mono text-xs">
+                    {(telemetry?.gps?.hdop ?? status?.sensors?.gps?.hdop ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {status?.sensors?.gps?.vdop !== undefined && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs w-20">VDOP:</span>
+                  <span className="text-white font-mono text-xs">
+                    {(status.sensors.gps.vdop ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {status?.sensors?.gps?.status && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-400 text-xs w-20">Status:</span>
+                  <span className="text-green-400 text-xs font-semibold">
+                    {status.sensors.gps.status}
+                  </span>
+                </div>
               )}
             </div>
           </div>

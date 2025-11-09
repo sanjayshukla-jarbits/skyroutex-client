@@ -1019,6 +1019,14 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
                 status={status}
                 wsConnected={wsConnected}
             />
+            <TelemetryDisplay 
+                telemetry={telemetry}
+                status={status}
+                wsConnected={wsConnected}
+                lastUpdate={lastTelemetryUpdate}     
+                updateFrequency={updateFrequency}     
+                isPulsing={telemetryPulse}            
+            />
         </div>
 
         {/* Control Panel - (Rest of the control panel code remains the same) */}
