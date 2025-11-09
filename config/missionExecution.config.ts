@@ -8,7 +8,7 @@ export const MISSION_EXECUTION_CONFIG = {
 
   // WebSocket Configuration
   websocket: {
-    url: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8002/ws/telemetry',
+    url: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:7000/ws/telemetry',
     reconnectInterval: 5000, // 5 seconds
     maxReconnectAttempts: 10,
     pingInterval: 20000, // 20 seconds

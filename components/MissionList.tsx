@@ -523,60 +523,6 @@ export default function MissionListComponent({
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center space-x-2">
-                            {/* PX4 UPLOAD BUTTON */}
-                            <button
-                              onClick={() => uploadMissionToPX4(mission)}
-                              disabled={uploading === mission.id}
-                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white text-xs font-semibold rounded transition-colors"
-                              title="Upload to PX4"
-                            >
-                              {uploading === mission.id ? 'Uploading...' : '📤 PX4'}
-                            </button>
-                            
-                            {/* START BUTTON - Show for pending/draft missions */}
-                            {(mission.status?.toLowerCase() === 'pending' || mission.status?.toLowerCase() === 'draft') && (
-                              <button
-                                onClick={() => handleStartMission(mission)}
-                                className="p-2 text-green-400 hover:bg-slate-600 rounded transition-colors group relative"
-                                title="Start Mission"
-                              >
-                                <Play size={18} className="fill-current" />
-                                <span className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-xs text-white rounded whitespace-nowrap z-10">
-                                  Start Mission
-                                </span>
-                              </button>
-                            )}
-                            
-                            {/* PAUSE BUTTON - Show for active missions */}
-                            {(mission.status?.toLowerCase() === 'active' || mission.status?.toLowerCase() === 'in_progress') && (
-                              <button
-                                onClick={() => handlePauseMission(mission)}
-                                className="p-2 text-yellow-400 hover:bg-slate-600 rounded transition-colors group relative"
-                                title="Pause Mission"
-                              >
-                                <Pause size={18} className="fill-current" />
-                                <span className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-xs text-white rounded whitespace-nowrap z-10">
-                                  Pause Mission
-                                </span>
-                              </button>
-                            )}
-                            
-                            {/* COMPLETE BUTTON - Show for active/paused missions */}
-                            {(mission.status?.toLowerCase() === 'active' || 
-                              mission.status?.toLowerCase() === 'in_progress' || 
-                              mission.status?.toLowerCase() === 'paused') && (
-                              <button
-                                onClick={() => handleCompleteMission(mission)}
-                                className="p-2 text-green-500 hover:bg-slate-600 rounded transition-colors group relative"
-                                title="Complete Mission"
-                              >
-                                <CheckCircle size={18} />
-                                <span className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-xs text-white rounded whitespace-nowrap z-10">
-                                  Complete Mission
-                                </span>
-                              </button>
-                            )}
-
                             {/* 🆕 VISUALIZE BUTTON - Always visible - NEW */}
                             <button
                               onClick={() => handleVisualizeMission(mission)}
