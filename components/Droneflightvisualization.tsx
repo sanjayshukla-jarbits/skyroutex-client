@@ -405,7 +405,37 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         
         if (data.success) {
         showToast(successMessage, 'success');
-        await fetchStatus();
+        
+        if (loadingKey === 'arm') {
+          console.log('✅ Optimistic update: Setting armed = true');
+          setStatus(prev => prev ? { ...prev, armed: true } : null);
+        } else if (loadingKey === 'disarm') {
+          console.log('✅ Optimistic update: Setting armed = false');
+          setStatus(prev => prev ? { ...prev, armed: false } : null);
+        } else if (loadingKey === 'takeoff') {
+          console.log('✅ Optimistic update: Setting flying = true');
+          setStatus(prev => prev ? { ...prev, flying: true, armed: true } : null);
+        } else if (loadingKey === 'land') {
+          console.log('✅ Optimistic update: Setting flying = false');
+          setStatus(prev => prev ? { ...prev, flying: false } : null);
+        }
+        
+        const verifyStatus = async (retries: number = 3) => {
+          for (let i = 0; i < retries; i++) {
+            await new Promise(resolve => setTimeout(resolve, 300 + (i * 200))); // Incremental delay
+            await fetchStatus();
+            
+            // Log status check
+            if (i < retries - 1) {
+              console.log(`Status verification attempt ${i + 1}/${retries}`);
+            } else {
+              console.log('✅ Status verification complete');
+            }
+          }
+        };
+        
+        // Run verification in background
+        verifyStatus();
         } else {
         showToast(data.message || 'Command failed', 'error');
         }
@@ -433,11 +463,13 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         return;
     }
     
+    console.log('🔓 ARM button clicked - Mission ID:', currentMissionId);
+    
     handleCommand(
         '/api/v1/vehicle/arm',
         { mission_id: String(currentMissionId), force_arm: false },
         'arm',
-        'Vehicle armed successfully'
+        '✅ Vehicle armed successfully'
     );
   };
 
@@ -448,38 +480,46 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         return;
     }
     
+    console.log('🔒 DISARM button clicked - Mission ID:', currentMissionId);
+    
     handleCommand(
         '/api/v1/vehicle/disarm',
         { mission_id: String(currentMissionId) },
         'disarm',
-        'Vehicle disarmed successfully'
+        '✅ Vehicle disarmed successfully'
     );
   };
 
   const handleTakeoff = () => {
+    console.log('🚀 TAKEOFF button clicked - Mission ID:', currentMissionId);
+    
     handleCommand(
       '/api/v1/vehicle/takeoff',
       { mission_id: String(currentMissionId), altitude: takeoffAltitude },
       'takeoff',
-      `Takeoff initiated to ${takeoffAltitude}m`
+      `✅ Takeoff initiated to ${takeoffAltitude}m`
     );
   };
 
   const handleLand = () => {
+    console.log('⬇️ LAND button clicked - Mission ID:', currentMissionId);
+    
     handleCommand(
       '/api/v1/vehicle/land',
       { mission_id: String(currentMissionId) },
       'land',
-      'Landing initiated'
+      '✅ Landing initiated'
     );
   };
 
   const handleRTL = () => {
+    console.log('🏠 RTL button clicked - Mission ID:', currentMissionId);
+    
     handleCommand(
       '/api/v1/vehicle/rtl',
       { mission_id: String(currentMissionId) },
       'rtl',
-      'Return to launch initiated'
+      '✅ Return to launch initiated'
     );
   };
 

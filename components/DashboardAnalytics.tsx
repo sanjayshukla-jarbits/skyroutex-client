@@ -14,6 +14,9 @@ import {
   BarChart3
 } from 'lucide-react'
 
+// CRITICAL FIX: Use proper API base URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
 interface MissionStats {
   total_missions: number
   by_status: {
@@ -39,19 +42,43 @@ interface DashboardData {
 export default function DashboardAnalytics() {
   const [stats, setStats] = useState<MissionStats | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
+  const [error, setError] = useState<string | null>(null)
   const [timeRange, setTimeRange] = useState<string>('7d')
 
   // Fetch statistics from backend
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const response = await fetch('/api/missions/stats/summary')
+        setLoading(true)
+        setError(null)
+        
+        // FIXED: Use full API URL instead of relative path
+        const response = await fetch(`${API_BASE_URL}/api/missions/stats/summary`)
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        
         const data = await response.json()
+        
         if (data.success) {
           setStats(data.statistics)
+          console.log('✅ Statistics loaded:', data.statistics)
+        } else {
+          throw new Error('Failed to load statistics')
         }
-      } catch (error) {
-        console.error('Failed to fetch statistics:', error)
+      } catch (error: any) {
+        console.error('❌ Failed to fetch statistics:', error)
+        setError(error.message || 'Failed to load statistics')
+        
+        // Set default empty stats on error
+        setStats({
+          total_missions: 0,
+          by_status: {},
+          average_distance_km: 0,
+          average_flight_time_min: 0,
+          total_distance_km: 0
+        })
       } finally {
         setLoading(false)
       }
@@ -76,9 +103,17 @@ export default function DashboardAnalytics() {
   const getStatusColor = (status: string): string => {
     switch (status) {
       case 'Completed': return 'bg-green-500'
+      case 'completed': return 'bg-green-500'
       case 'In Flight': return 'bg-blue-500'
+      case 'active': return 'bg-blue-500'
+      case 'in_progress': return 'bg-blue-500'
       case 'Pending': return 'bg-yellow-500'
+      case 'pending': return 'bg-yellow-500'
+      case 'draft': return 'bg-gray-500'
       case 'Failed': return 'bg-red-500'
+      case 'failed': return 'bg-red-500'
+      case 'cancelled': return 'bg-red-500'
+      case 'paused': return 'bg-orange-500'
       default: return 'bg-gray-500'
     }
   }
@@ -94,16 +129,16 @@ export default function DashboardAnalytics() {
     value: string | number
     icon: any
     trend?: string
-    color: string 
+    color: string
   }) => (
-    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl hover:border-blue-500 transition-all">
-      <div className="flex items-start justify-between mb-4">
-        <div className={`w-12 h-12 ${color} bg-opacity-20 rounded-lg flex items-center justify-center`}>
+    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl hover:shadow-2xl transition-shadow">
+      <div className="flex items-center justify-between mb-4">
+        <div className={`${color} bg-opacity-20 p-3 rounded-lg`}>
           <Icon size={24} className={color.replace('bg-', 'text-')} />
         </div>
         {trend && (
-          <div className="flex items-center space-x-1 text-green-400 text-sm">
-            <TrendingUp size={16} />
+          <div className="text-green-400 text-sm flex items-center space-x-1">
+            <TrendingUp size={14} />
             <span>{trend}</span>
           </div>
         )}
@@ -113,40 +148,63 @@ export default function DashboardAnalytics() {
     </div>
   )
 
+  // Loading state
   if (loading) {
     return (
-      <div className="flex-1 bg-slate-900 min-h-screen flex items-center justify-center">
-        <div className="text-white text-xl">Loading dashboard...</div>
+      <div className="flex-1 p-8 bg-slate-900 overflow-y-auto">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-slate-400">Loading dashboard...</p>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 bg-slate-900 min-h-screen overflow-y-auto">
-      <div className="p-8">
+    <div className="flex-1 p-8 bg-slate-900 overflow-y-auto">
+      <div className="max-w">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-4xl font-bold text-white mb-2">Dashboard & Analytics</h1>
-              <p className="text-slate-400">Real-time mission insights and performance metrics</p>
+              <h1 className="text-3xl font-bold text-white mb-2">Mission Control Dashboard</h1>
+              <p className="text-slate-400">SkyrouteX UAV Operations Center</p>
             </div>
-            <div className="flex items-center space-x-3">
-              <select 
+            <div className="flex items-center space-x-4">
+              {/* Time Range Selector */}
+              <select
                 value={timeRange}
                 onChange={(e) => setTimeRange(e.target.value)}
-                className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="bg-slate-800 text-white px-4 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-blue-500"
               >
                 <option value="24h">Last 24 Hours</option>
                 <option value="7d">Last 7 Days</option>
                 <option value="30d">Last 30 Days</option>
-                <option value="90d">Last 90 Days</option>
+                <option value="all">All Time</option>
               </select>
-              <button className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors">
-                Export Report
+              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                Generate Report
               </button>
             </div>
           </div>
+
+          {/* Error Display */}
+          {error && (
+            <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
+              <AlertTriangle size={20} className="text-red-400" />
+              <div>
+                <p className="text-red-400 font-medium">Failed to load statistics</p>
+                <p className="text-sm text-red-300">{error}</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Make sure the backend API is running on {API_BASE_URL}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Key Metrics Grid */}
@@ -174,7 +232,7 @@ export default function DashboardAnalytics() {
           />
           <StatCard
             title="Total Distance"
-            value={`${stats?.total_distance_km.toFixed(0) || 0} km`}
+            value={`${stats?.total_distance_km?.toFixed(0) || 0} km`}
             icon={MapPin}
             trend="+18%"
             color="bg-orange-500"
@@ -196,46 +254,55 @@ export default function DashboardAnalytics() {
 
             {/* Status Bars */}
             <div className="space-y-4">
-              {stats?.by_status && Object.entries(stats.by_status).map(([status, count]) => {
-                const percentage = ((count / stats.total_missions) * 100).toFixed(1)
-                return (
-                  <div key={status}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-slate-300 font-medium">{status}</span>
-                      <span className="text-white font-bold">{count} ({percentage}%)</span>
+              {stats?.by_status && Object.keys(stats.by_status).length > 0 ? (
+                Object.entries(stats.by_status).map(([status, count]) => {
+                  const percentage = ((count / stats.total_missions) * 100).toFixed(1)
+                  return (
+                    <div key={status}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-slate-300 font-medium capitalize">{status}</span>
+                        <span className="text-white font-bold">{count} ({percentage}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-700 rounded-full h-3">
+                        <div
+                          className={`${getStatusColor(status)} h-3 rounded-full transition-all duration-500`}
+                          style={{ width: `${percentage}%` }}
+                        ></div>
+                      </div>
                     </div>
-                    <div className="w-full bg-slate-700 rounded-full h-3">
-                      <div
-                        className={`${getStatusColor(status)} h-3 rounded-full transition-all duration-500`}
-                        style={{ width: `${percentage}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              ) : (
+                <div className="text-center py-8 text-slate-400">
+                  <p>No mission data available</p>
+                  <p className="text-sm mt-2">Create some missions to see statistics</p>
+                </div>
+              )}
             </div>
 
             {/* Quick Stats */}
-            <div className="mt-6 pt-6 border-t border-slate-700 grid grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-400">
-                  {stats?.by_status['Completed'] || 0}
+            {stats?.by_status && Object.keys(stats.by_status).length > 0 && (
+              <div className="mt-6 pt-6 border-t border-slate-700 grid grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-400">
+                    {stats?.by_status['completed'] || stats?.by_status['Completed'] || 0}
+                  </div>
+                  <div className="text-slate-400 text-sm mt-1">Completed</div>
                 </div>
-                <div className="text-slate-400 text-sm mt-1">Completed</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-400">
-                  {stats?.by_status['In Flight'] || 0}
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-400">
+                    {stats?.by_status['active'] || stats?.by_status['in_progress'] || stats?.by_status['In Flight'] || 0}
+                  </div>
+                  <div className="text-slate-400 text-sm mt-1">Active</div>
                 </div>
-                <div className="text-slate-400 text-sm mt-1">In Flight</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-400">
-                  {stats?.by_status['Pending'] || 0}
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-yellow-400">
+                    {stats?.by_status['pending'] || stats?.by_status['Pending'] || 0}
+                  </div>
+                  <div className="text-slate-400 text-sm mt-1">Pending</div>
                 </div>
-                <div className="text-slate-400 text-sm mt-1">Pending</div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Recent Missions */}
@@ -278,7 +345,7 @@ export default function DashboardAnalytics() {
               <div>
                 <div className="text-slate-400 text-sm">Avg Flight Time</div>
                 <div className="text-2xl font-bold text-white">
-                  {stats?.average_flight_time_min.toFixed(1) || 0} min
+                  {stats?.average_flight_time_min?.toFixed(1) || 0} min
                 </div>
               </div>
             </div>
@@ -297,13 +364,13 @@ export default function DashboardAnalytics() {
               <div>
                 <div className="text-slate-400 text-sm">Avg Distance</div>
                 <div className="text-2xl font-bold text-white">
-                  {stats?.average_distance_km.toFixed(1) || 0} km
+                  {stats?.average_distance_km?.toFixed(1) || 0} km
                 </div>
               </div>
             </div>
             <div className="text-green-400 text-sm flex items-center space-x-1">
               <TrendingUp size={14} />
-              <span>12% increase</span>
+              <span>5% increase</span>
             </div>
           </div>
 
@@ -315,7 +382,7 @@ export default function DashboardAnalytics() {
               </div>
               <div>
                 <div className="text-slate-400 text-sm">Battery Efficiency</div>
-                <div className="text-2xl font-bold text-white">94.2%</div>
+                <div className="text-2xl font-bold text-white">95.2%</div>
               </div>
             </div>
             <div className="text-green-400 text-sm flex items-center space-x-1">
@@ -325,63 +392,17 @@ export default function DashboardAnalytics() {
           </div>
         </div>
 
-        {/* Alerts & Notifications */}
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl">
-          <h2 className="text-xl font-bold text-white mb-6 flex items-center space-x-2">
-            <AlertTriangle size={24} className="text-yellow-400" />
-            <span>System Alerts & Notifications</span>
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 bg-yellow-500 bg-opacity-10 border border-yellow-500 rounded-lg">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle size={20} className="text-yellow-400 mt-1" />
-                <div>
-                  <div className="text-yellow-400 font-semibold">Low Battery Warning</div>
-                  <div className="text-slate-300 text-sm mt-1">
-                    Vehicle UAV-007 reporting 15% battery - Mission M-2024-046
-                  </div>
-                  <div className="text-slate-400 text-xs mt-2">5 minutes ago</div>
-                </div>
-              </div>
+        {/* Connection Status */}
+        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`w-3 h-3 rounded-full ${error ? 'bg-red-500' : 'bg-green-500'} animate-pulse`}></div>
+              <span className="text-sm text-slate-400">
+                {error ? 'API Connection Failed' : 'Connected to Mission Database API'}
+              </span>
             </div>
-
-            <div className="p-4 bg-blue-500 bg-opacity-10 border border-blue-500 rounded-lg">
-              <div className="flex items-start space-x-3">
-                <CheckCircle size={20} className="text-blue-400 mt-1" />
-                <div>
-                  <div className="text-blue-400 font-semibold">Mission Completed</div>
-                  <div className="text-slate-300 text-sm mt-1">
-                    Border Surveillance Alpha completed successfully
-                  </div>
-                  <div className="text-slate-400 text-xs mt-2">2 hours ago</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 bg-green-500 bg-opacity-10 border border-green-500 rounded-lg">
-              <div className="flex items-start space-x-3">
-                <Package size={20} className="text-green-400 mt-1" />
-                <div>
-                  <div className="text-green-400 font-semibold">New Vehicle Added</div>
-                  <div className="text-slate-300 text-sm mt-1">
-                    UAV-015 (DJI Matrice 300) added to fleet
-                  </div>
-                  <div className="text-slate-400 text-xs mt-2">1 day ago</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 bg-purple-500 bg-opacity-10 border border-purple-500 rounded-lg">
-              <div className="flex items-start space-x-3">
-                <Target size={20} className="text-purple-400 mt-1" />
-                <div>
-                  <div className="text-purple-400 font-semibold">Route Optimized</div>
-                  <div className="text-slate-300 text-sm mt-1">
-                    AI optimized route for Mission M-2024-048, saving 12 minutes
-                  </div>
-                  <div className="text-slate-400 text-xs mt-2">3 hours ago</div>
-                </div>
-              </div>
+            <div className="text-xs text-slate-500">
+              {API_BASE_URL}
             </div>
           </div>
         </div>
