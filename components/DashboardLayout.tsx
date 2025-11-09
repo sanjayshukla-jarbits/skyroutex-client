@@ -84,12 +84,25 @@ export default function DashboardLayout() {
           selectedMission={selectedMission ? {
             id: selectedMission.id,
             name: selectedMission.name,
-            waypoints: selectedMission.waypoints.map(wp => ({
-              lat: wp.lat,
-              lng: wp.lng,
-              alt: wp.alt,
-              name: wp.name
-            })),
+            waypoints: selectedMission.waypoints.map(wp => {
+              const wpAny = wp as any;
+              
+              // Get longitude from either lng or lon property
+              const longitude = wpAny.lng ?? wpAny.lon;
+              
+              // Validate coordinates
+              if (!longitude || !wp.lat) {
+                console.warn('⚠️ Invalid waypoint detected:', wp);
+              }
+              
+              // Return normalized waypoint with lng property
+              return {
+                lat: wp.lat,
+                lng: longitude,
+                alt: wp.alt,
+                name: wp.name
+              };
+            }),
             corridor: selectedMission.corridor,
             distance: selectedMission.distance,
             status: selectedMission.status

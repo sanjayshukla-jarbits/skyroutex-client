@@ -74,9 +74,11 @@ interface FlightPath {
   timestamp: number;
 }
 
+// CRITICAL FIX: Accept both lng and lon properties
 interface MissionWaypoint {
   lat: number;
-  lng: number;
+  lng?: number;  // Preferred property (used by frontend)
+  lon?: number;  // Alternative property (used by backend/database)
   alt?: number;
   name?: string;
 }
@@ -96,6 +98,14 @@ interface DroneFlightVisualizationProps {
 }
 
 // ============================================================================
+// HELPER FUNCTION: Safely get waypoint longitude
+// ============================================================================
+
+const getWaypointLongitude = (wp: MissionWaypoint): number | undefined => {
+  return wp.lng ?? wp.lon;
+};
+
+// ============================================================================
 // MAP UPDATE COMPONENT
 // ============================================================================
 
@@ -103,7 +113,12 @@ const MapUpdater: React.FC<{ center: [number, number]; zoom: number }> = ({ cent
   const map = useMap();
   
   useEffect(() => {
-    map.setView(center, zoom);
+    // CRITICAL FIX: Validate coordinates before setting
+    if (center && center.length === 2 && 
+        !isNaN(center[0]) && !isNaN(center[1]) &&
+        center[0] !== 0 && center[1] !== 0) {
+      map.setView(center, zoom);
+    }
   }, [center, zoom, map]);
   
   return null;
@@ -132,17 +147,37 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   
   const API_BASE = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
   
-  // Default position (Lucknow, India) or first waypoint of selected mission
-  const defaultPosition: [number, number] = selectedMission?.waypoints?.[0]
-    ? [selectedMission.waypoints[0].lat, selectedMission.waypoints[0].lng]
-    : [26.8467, 80.9462];
-  const [mapCenter, setMapCenter] = useState<[number, number]>(defaultPosition);
+  // CRITICAL FIX: Safe default position calculation
+  const getDefaultPosition = (): [number, number] => {
+    if (selectedMission?.waypoints?.[0]) {
+      const firstWp = selectedMission.waypoints[0];
+      const lng = getWaypointLongitude(firstWp);
+      
+      // Validate coordinates before using
+      if (firstWp.lat && lng && 
+          !isNaN(firstWp.lat) && !isNaN(lng) &&
+          firstWp.lat >= -90 && firstWp.lat <= 90 &&
+          lng >= -180 && lng <= 180 &&
+          firstWp.lat !== 0 && lng !== 0) {
+        return [firstWp.lat, lng];
+      }
+    }
+    // Fallback to Lucknow, India
+    return [26.8467, 80.9462];
+  };
+  
+  const [mapCenter, setMapCenter] = useState<[number, number]>(getDefaultPosition());
   const [mapZoom, setMapZoom] = useState(selectedMission ? 15 : 18);
 
-  // Update mission ID when selectedMission changes
+  // Update mission ID and map center when selectedMission changes
   useEffect(() => {
     if (selectedMission?.id) {
       setCurrentMissionId(selectedMission.id);
+      
+      // Update map center to first valid waypoint
+      const newCenter = getDefaultPosition();
+      setMapCenter(newCenter);
+      
       showToast(`Mission "${selectedMission.name}" loaded`, 'success');
     }
   }, [selectedMission?.id]);
@@ -272,7 +307,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     if (isValidCoordinate(statusLat, statusLon)) {
       return [statusLat!, statusLon!];
     }
-    return defaultPosition;
+    return getDefaultPosition();
   };
   
   const updateMapCenter = (lat?: number, lon?: number) => {
@@ -295,8 +330,8 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
           setStatus(statusData);
           setIsConnected(statusData.connected);
           
-          // Safely update map center with validation (only if not following mission)
-          if (statusData.current_position && status?.flying) {
+          // Safely update map center with validation (only if flying)
+          if (statusData.current_position && statusData.flying) {
             const { lat, lon } = statusData.current_position;
             if (isValidCoordinate(lat, lon)) {
               setMapCenter([lat, lon]);
@@ -550,6 +585,26 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     .filter(point => isValidCoordinate(point.lat, point.lon))
     .map(point => [point.lat, point.lon]);
 
+  // CRITICAL FIX: Filter and validate waypoints before rendering
+  const getValidWaypoints = () => {
+    if (!selectedMission?.waypoints || selectedMission.waypoints.length === 0) {
+      return [];
+    }
+
+    return selectedMission.waypoints.filter(wp => {
+      const lng = getWaypointLongitude(wp);
+      const isValid = isValidCoordinate(wp.lat, lng);
+      
+      if (!isValid) {
+        console.warn('Invalid waypoint detected:', wp);
+      }
+      
+      return isValid;
+    });
+  };
+
+  const validWaypoints = getValidWaypoints();
+
   // ============================================================================
   // RENDER
   // ============================================================================
@@ -624,38 +679,42 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
               />
             )}
 
-            {/* Mission Waypoints */}
-            {selectedMission?.waypoints && selectedMission.waypoints.length > 0 && (
+            {/* Mission Waypoints - FIXED VERSION */}
+            {validWaypoints.length > 0 && (
               <>
                 {/* Waypoint Markers */}
-                {selectedMission.waypoints.map((wp, index) => (
-                  <Marker
-                    key={`wp-${index}`}
-                    position={[wp.lat, wp.lng]}
-                    icon={createWaypointIcon(index, status?.mission_current === index + 1)}
-                  >
-                    <Popup>
-                      <div className="text-xs">
-                        <strong>Waypoint {index + 1}</strong>
-                        {wp.name && <><br />{wp.name}</>}
-                        <br />
-                        Lat: {wp.lat.toFixed(6)}
-                        <br />
-                        Lon: {wp.lng.toFixed(6)}
-                        {wp.alt && (
-                          <>
-                            <br />
-                            Alt: {wp.alt} m
-                          </>
-                        )}
-                      </div>
-                    </Popup>
-                  </Marker>
-                ))}
+                {validWaypoints.map((wp, index) => {
+                  const lng = getWaypointLongitude(wp)!; // Safe because filtered
+                  
+                  return (
+                    <Marker
+                      key={`wp-${index}`}
+                      position={[wp.lat, lng]}
+                      icon={createWaypointIcon(index, status?.mission_current === index + 1)}
+                    >
+                      <Popup>
+                        <div className="text-xs">
+                          <strong>Waypoint {index + 1}</strong>
+                          {wp.name && <><br />{wp.name}</>}
+                          <br />
+                          Lat: {wp.lat.toFixed(6)}
+                          <br />
+                          Lon: {lng.toFixed(6)}
+                          {wp.alt && (
+                            <>
+                              <br />
+                              Alt: {wp.alt} m
+                            </>
+                          )}
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                })}
 
                 {/* Waypoint Path */}
                 <Polyline
-                  positions={selectedMission.waypoints.map(wp => [wp.lat, wp.lng])}
+                  positions={validWaypoints.map(wp => [wp.lat, getWaypointLongitude(wp)!])}
                   color="#3b82f6"
                   weight={2}
                   opacity={0.7}
@@ -836,7 +895,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
                 )}
                 <div className="flex justify-between">
                   <span className="text-gray-400">Waypoints:</span>
-                  <span className="text-white">{selectedMission.waypoints.length}</span>
+                  <span className="text-white">{validWaypoints.length} / {selectedMission.waypoints.length}</span>
                 </div>
                 {selectedMission.distance && (
                   <div className="flex justify-between">
