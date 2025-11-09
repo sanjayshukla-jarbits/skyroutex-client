@@ -268,34 +268,6 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     reconnectAttemptsRef.current = 0;
   };
 
-  const handleTelemetryUpdate = (data: TelemetryData) => {
-    setTelemetry(data);
-    
-    // Add to flight path and update map only if position is valid
-    if (data.position) {
-      const { lat, lon, alt } = data.position;
-      
-      if (isValidCoordinate(lat, lon)) {
-        const newPoint: FlightPath = {
-          lat,
-          lon,
-          alt,
-          timestamp: Date.now(),
-        };
-        
-        setFlightPath(prev => {
-          const updated = [...prev, newPoint];
-          return updated.slice(-500); // Keep last 500 points
-        });
-        
-        // Update map center to follow drone (only when flying)
-        if (status?.flying) {
-          setMapCenter([lat, lon]);
-        }
-      }
-    }
-  };
-
   // Send heartbeat ping every 30 seconds
   useEffect(() => {
     if (wsConnected && wsRef.current?.readyState === WebSocket.OPEN) {
@@ -799,6 +771,89 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   // RENDER
   // ============================================================================
 
+    const [lastTelemetryUpdate, setLastTelemetryUpdate] = useState<number>(Date.now());
+    const [updateFrequency, setUpdateFrequency] = useState<number>(0);
+    const [telemetryPulse, setTelemetryPulse] = useState<boolean>(false);
+    const updateCountRef = useRef<number>(0);
+    const updateTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Update the handleTelemetryUpdate function:
+    const handleTelemetryUpdate = (data: TelemetryData) => {
+    setTelemetry(data);
+    setLastTelemetryUpdate(Date.now());
+    
+    // Trigger visual pulse
+    setTelemetryPulse(true);
+    setTimeout(() => setTelemetryPulse(false), 200);
+    
+    // Calculate update frequency
+    updateCountRef.current += 1;
+    
+    // Add to flight path and update map only if position is valid
+    if (data.position) {
+        const { lat, lon, alt } = data.position;
+        
+        if (isValidCoordinate(lat, lon)) {
+        const newPoint: FlightPath = {
+            lat,
+            lon,
+            alt,
+            timestamp: Date.now(),
+        };
+        
+        setFlightPath(prev => {
+            const updated = [...prev, newPoint];
+            return updated.slice(-500);
+        });
+        
+        if (status?.flying) {
+            setMapCenter([lat, lon]);
+        }
+        }
+    }
+    };
+
+    // Add effect to calculate update frequency (Hz):
+    useEffect(() => {
+        updateTimerRef.current = setInterval(() => {
+            setUpdateFrequency(updateCountRef.current);
+            updateCountRef.current = 0;
+        }, 1000);
+        
+        return () => {
+            if (updateTimerRef.current) {
+            clearInterval(updateTimerRef.current);
+            }
+        };
+    }, []);
+
+    // Helper function to format time ago:
+    const formatTimeAgo = (timestamp: number): string => {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    if (seconds < 1) return 'Just now';
+    if (seconds === 1) return '1 second ago';
+    if (seconds < 60) return `${seconds} seconds ago`;
+    
+    const minutes = Math.floor(seconds / 60);
+    if (minutes === 1) return '1 minute ago';
+    if (minutes < 60) return `${minutes} minutes ago`;
+    
+    const hours = Math.floor(minutes / 60);
+    if (hours === 1) return '1 hour ago';
+    return `${hours} hours ago`;
+    };
+
+    // Helper to get data freshness indicator:
+    const getDataFreshnessColor = (timestamp: number): string => {
+    const ageMs = Date.now() - timestamp;
+    
+    if (ageMs < 1000) return 'text-green-400';      // < 1s - Fresh
+    if (ageMs < 3000) return 'text-yellow-400';     // < 3s - Acceptable  
+    if (ageMs < 10000) return 'text-orange-400';    // < 10s - Stale
+    return 'text-red-400';                           // > 10s - Very stale
+  };
+
   return (
     <div className="flex flex-col h-full w-full bg-gray-950">
       {/* Header */}
@@ -958,110 +1013,239 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
           </MapContainer>
 
           {/* Telemetry Display */}
-          <div className="absolute top-4 right-4 bg-gray-900/95 backdrop-blur-sm rounded-lg p-4 border border-gray-700 min-w-[300px] z-[1000]">
+            <div className={`absolute top-4 right-4 bg-gray-900/95 backdrop-blur-sm rounded-lg p-4 border ${
+            telemetryPulse ? 'border-green-400 shadow-lg shadow-green-400/50' : 'border-gray-700'
+            } min-w-[320px] z-[1000] transition-all duration-200`}>
+            
+            {/* Header */}
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold text-white">Live Telemetry</h3>
-              {wsConnected && (
-                <span className="text-xs text-green-400 flex items-center gap-1">
-                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                  WebSocket
+                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                Live Telemetry
+                {wsConnected && (
+                    <span className="text-xs text-green-400 flex items-center gap-1 px-2 py-1 bg-green-400/10 rounded-full">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                    WebSocket
+                    </span>
+                )}
+                {!wsConnected && isConnected && (
+                    <span className="text-xs text-yellow-400 flex items-center gap-1 px-2 py-1 bg-yellow-400/10 rounded-full">
+                    <span className="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                    Polling
+                    </span>
+                )}
+                </h3>
+            </div>
+            
+            {/* Update Info Bar */}
+            <div className="mb-3 pb-3 border-b border-gray-700 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                <span className="text-gray-400">Update Rate:</span>
+                <span className={`font-mono font-bold ${
+                    updateFrequency > 5 ? 'text-green-400' : 
+                    updateFrequency > 1 ? 'text-yellow-400' : 
+                    'text-red-400'
+                }`}>
+                    {updateFrequency} Hz
                 </span>
-              )}
+                </div>
+                <div className="flex items-center gap-2">
+                <span className="text-gray-400">Last Update:</span>
+                <span className={`font-mono ${getDataFreshnessColor(lastTelemetryUpdate)}`}>
+                    {formatTimeAgo(lastTelemetryUpdate)}
+                </span>
+                </div>
             </div>
             
             <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
+                {/* Status */}
+                <div className="flex items-center gap-2">
                 <span className="text-gray-400 w-20">Status:</span>
                 <div className="flex gap-2">
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
                     status?.armed ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400'
-                  }`}>
+                    }`}>
                     {status?.armed ? 'ARMED' : 'DISARMED'}
-                  </span>
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                    </span>
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
                     status?.flying ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-400'
-                  }`}>
+                    }`}>
                     {status?.flying ? 'FLYING' : 'LANDED'}
-                  </span>
+                    </span>
                 </div>
-              </div>
+                </div>
 
-              <div className="flex items-center gap-2">
+                {/* Flight Mode */}
+                <div className="flex items-center gap-2">
                 <span className="text-gray-400 w-20">Mode:</span>
                 <span className="text-blue-400 font-mono">{status?.flight_mode ?? 'N/A'}</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 w-20">Position:</span>
-                <div className="text-white font-mono text-xs">
-                  <div>Lat: {(telemetry?.position?.lat ?? status?.current_position?.lat ?? 0).toFixed(6)}</div>
-                  <div>Lon: {(telemetry?.position?.lon ?? status?.current_position?.lon ?? 0).toFixed(6)}</div>
-                  <div>Alt: {(telemetry?.position?.alt ?? status?.current_position?.alt ?? 0).toFixed(1)}m</div>
                 </div>
-              </div>
 
-              {telemetry?.velocity && (
+                {/* Position - with visual update indicator */}
                 <div className="flex items-center gap-2">
-                  <span className="text-gray-400 w-20">Velocity:</span>
-                  <div className="text-white font-mono text-xs">
+                <span className="text-gray-400 w-20">Position:</span>
+                <div className="text-white font-mono text-xs flex-1">
+                    <div className="flex items-center justify-between">
+                    <span>Lat: {(telemetry?.position?.lat ?? status?.current_position?.lat ?? 0).toFixed(6)}</span>
+                    {telemetry?.position?.lat && (
+                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse ml-2"></span>
+                    )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                    <span>Lon: {(telemetry?.position?.lon ?? status?.current_position?.lon ?? 0).toFixed(6)}</span>
+                    {telemetry?.position?.lon && (
+                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse ml-2"></span>
+                    )}
+                    </div>
+                    <div className="flex items-center justify-between">
+                    <span>Alt: {(telemetry?.position?.alt ?? status?.current_position?.alt ?? 0).toFixed(1)}m</span>
+                    {telemetry?.position?.alt && (
+                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse ml-2"></span>
+                    )}
+                    </div>
+                </div>
+                </div>
+
+                {/* Velocity - with calculated ground speed */}
+                {telemetry?.velocity && (
+                <div className="flex items-center gap-2">
+                    <span className="text-gray-400 w-20">Velocity:</span>
+                    <div className="text-white font-mono text-xs flex-1">
                     <div>X: {(telemetry.velocity.vx ?? 0).toFixed(2)} m/s</div>
                     <div>Y: {(telemetry.velocity.vy ?? 0).toFixed(2)} m/s</div>
                     <div>Z: {(telemetry.velocity.vz ?? 0).toFixed(2)} m/s</div>
-                  </div>
+                    <div className="text-cyan-400 mt-1">
+                        Ground: {Math.sqrt(
+                        Math.pow(telemetry.velocity.vx ?? 0, 2) + 
+                        Math.pow(telemetry.velocity.vy ?? 0, 2)
+                        ).toFixed(2)} m/s
+                    </div>
+                    </div>
                 </div>
-              )}
+                )}
 
-              {telemetry?.attitude && (
+                {/* Attitude - with visual orientation */}
+                {telemetry?.attitude && (
                 <div className="flex items-center gap-2">
-                  <span className="text-gray-400 w-20">Attitude:</span>
-                  <div className="text-white font-mono text-xs">
-                    <div>Roll: {((telemetry.attitude.roll ?? 0) * 180 / Math.PI).toFixed(1)}°</div>
-                    <div>Pitch: {((telemetry.attitude.pitch ?? 0) * 180 / Math.PI).toFixed(1)}°</div>
-                    <div>Yaw: {((telemetry.attitude.yaw ?? 0) * 180 / Math.PI).toFixed(1)}°</div>
-                  </div>
+                    <span className="text-gray-400 w-20">Attitude:</span>
+                    <div className="text-white font-mono text-xs flex-1">
+                    <div className="flex items-center justify-between">
+                        <span>Roll: {((telemetry.attitude.roll ?? 0) * 180 / Math.PI).toFixed(1)}°</span>
+                        <div className="w-12 h-1 bg-gray-700 rounded overflow-hidden">
+                        <div 
+                            className="h-full bg-blue-400 transition-all duration-200"
+                            style={{ 
+                            width: `${Math.abs((telemetry.attitude.roll ?? 0) * 180 / Math.PI) / 90 * 100}%`,
+                            marginLeft: (telemetry.attitude.roll ?? 0) < 0 ? '0' : 'auto'
+                            }}
+                        ></div>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span>Pitch: {((telemetry.attitude.pitch ?? 0) * 180 / Math.PI).toFixed(1)}°</span>
+                        <div className="w-12 h-1 bg-gray-700 rounded overflow-hidden">
+                        <div 
+                            className="h-full bg-green-400 transition-all duration-200"
+                            style={{ 
+                            width: `${Math.abs((telemetry.attitude.pitch ?? 0) * 180 / Math.PI) / 90 * 100}%`,
+                            marginLeft: (telemetry.attitude.pitch ?? 0) < 0 ? '0' : 'auto'
+                            }}
+                        ></div>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span>Yaw: {((telemetry.attitude.yaw ?? 0) * 180 / Math.PI).toFixed(1)}°</span>
+                        <span className="text-xs text-gray-400">
+                        ({['N','NE','E','SE','S','SW','W','NW'][Math.round(((telemetry.attitude.yaw ?? 0) * 180 / Math.PI + 360) / 45) % 8]})
+                        </span>
+                    </div>
+                    </div>
                 </div>
-              )}
+                )}
 
-              <div className="flex items-center gap-2">
+                {/* Battery - with detailed info */}
+                <div className="flex items-center gap-2">
                 <span className="text-gray-400 w-20">Battery:</span>
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 mb-1">
                     <div className="flex-1 bg-gray-700 rounded-full h-2 overflow-hidden">
-                      <div
+                        <div
                         className={`h-full transition-all duration-300 ${
-                          (telemetry?.battery?.remaining ?? status?.battery_level ?? 0) > 50
-                          ? 'bg-green-500'
-                          : (telemetry?.battery?.remaining ?? status?.battery_level ?? 0) > 20
-                          ? 'bg-yellow-500'
-                          : 'bg-red-500'
+                            (telemetry?.battery?.remaining ?? status?.battery_level ?? 0) > 50
+                            ? 'bg-green-500'
+                            : (telemetry?.battery?.remaining ?? status?.battery_level ?? 0) > 20
+                            ? 'bg-yellow-500'
+                            : 'bg-red-500'
                         }`}
                         style={{ width: `${telemetry?.battery?.remaining ?? status?.battery_level ?? 0}%` }}
-                      />
+                        />
                     </div>
                     <span className="text-white font-bold min-w-[45px]">
-                      {(telemetry?.battery?.remaining ?? status?.battery_level ?? 0).toFixed(0)}%
+                        {(telemetry?.battery?.remaining ?? status?.battery_level ?? 0).toFixed(0)}%
                     </span>
-                  </div>
-                  {telemetry?.battery && (
-                    <div className="text-xs text-gray-400 mt-1">
-                      {(telemetry.battery.voltage ?? 0).toFixed(2)}V / {(telemetry.battery.current ?? 0).toFixed(2)}A
                     </div>
-                  )}
+                    {telemetry?.battery && (
+                    <div className="text-xs space-y-0.5">
+                        <div className="flex items-center justify-between text-gray-400">
+                        <span>Voltage:</span>
+                        <span className="text-white font-mono">{(telemetry.battery.voltage ?? 0).toFixed(2)}V</span>
+                        </div>
+                        <div className="flex items-center justify-between text-gray-400">
+                        <span>Current:</span>
+                        <span className="text-white font-mono">{(telemetry.battery.current ?? 0).toFixed(2)}A</span>
+                        </div>
+                        <div className="flex items-center justify-between text-gray-400">
+                        <span>Power:</span>
+                        <span className="text-cyan-400 font-mono">
+                            {((telemetry.battery.voltage ?? 0) * (telemetry.battery.current ?? 0)).toFixed(1)}W
+                        </span>
+                        </div>
+                    </div>
+                    )}
                 </div>
-              </div>
+                </div>
 
-              {telemetry?.gps && (
+                {/* GPS - with signal quality indicator */}
+                {telemetry?.gps && (
                 <div className="flex items-center gap-2">
-                  <span className="text-gray-400 w-20">GPS:</span>
-                  <div className="text-white font-mono text-xs">
-                    <div>Sats: {telemetry.gps.satellites ?? 0}</div>
-                    <div>Fix: {telemetry.gps.fix_type ?? 0}</div>
-                    <div>HDOP: {(telemetry.gps.hdop ?? 0).toFixed(2)}</div>
-                  </div>
+                    <span className="text-gray-400 w-20">GPS:</span>
+                    <div className="text-white font-mono text-xs flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                        <span>Satellites:</span>
+                        <span className={`font-bold ${
+                        (telemetry.gps.satellites ?? 0) >= 8 ? 'text-green-400' :
+                        (telemetry.gps.satellites ?? 0) >= 5 ? 'text-yellow-400' :
+                        'text-red-400'
+                        }`}>
+                        {telemetry.gps.satellites ?? 0}
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between mb-1">
+                        <span>Fix Type:</span>
+                        <span className={`${
+                        (telemetry.gps.fix_type ?? 0) === 3 ? 'text-green-400' :
+                        (telemetry.gps.fix_type ?? 0) === 2 ? 'text-yellow-400' :
+                        'text-red-400'
+                        }`}>
+                        {telemetry.gps.fix_type === 3 ? '3D Fix' :
+                        telemetry.gps.fix_type === 2 ? '2D Fix' :
+                        'No Fix'}
+                        </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span>HDOP:</span>
+                        <span className={`${
+                        (telemetry.gps.hdop ?? 999) < 2 ? 'text-green-400' :
+                        (telemetry.gps.hdop ?? 999) < 5 ? 'text-yellow-400' :
+                        'text-red-400'
+                        }`}>
+                        {(telemetry.gps.hdop ?? 0).toFixed(2)}
+                        </span>
+                    </div>
+                    </div>
                 </div>
-              )}
+                )}
             </div>
-          </div>
+            </div>
         </div>
 
         {/* Control Panel - (Rest of the control panel code remains the same) */}
