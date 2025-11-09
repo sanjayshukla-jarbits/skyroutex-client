@@ -1,482 +1,672 @@
-/**
- * MissionExecutionView Component - TypeScript Version
- * Main execution interface with map, controls, and real-time telemetry
- */
+'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Polyline, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useState, useEffect, useRef } from 'react'
 import { 
   Play, 
   Pause, 
   Square, 
-  Upload, 
-  Power, 
-  PowerOff, 
-  ArrowUp,
-  AlertCircle,
-  Activity,
-  Navigation,
-  Battery,
-  Satellite
-} from 'lucide-react';
-import droneControlService from './DroneControlService';
-import TelemetryPanel from './TelemetryPanel';
-import { 
-  MissionExecutionViewProps, 
-  MissionExecutionState,
-  TelemetryData,
-  Waypoint
-} from './types';
+  Radio, 
+  Activity, 
+  MapPin, 
+  Battery, 
+  Gauge, 
+  Navigation, 
+  Camera,
+  Video,
+  AlertTriangle,
+  CheckCircle,
+  ArrowLeft,
+  Maximize2,
+  Settings,
+  Target,
+  Upload
+} from 'lucide-react'
+import TelemetryPanel from './TelemetryPanel'
 
-// Custom marker icons
-const createCustomIcon = (color: string): L.DivIcon => {
-  return L.divIcon({
-    className: 'custom-icon',
-    html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12]
-  });
-};
+interface MissionExecutionViewProps {
+  missionId: string
+  onBack?: () => void
+}
 
-const startIcon = createCustomIcon('#10b981');
-const waypointIcon = createCustomIcon('#3b82f6');
-const endIcon = createCustomIcon('#ef4444');
-const droneIcon = createCustomIcon('#f59e0b');
+interface MissionStatus {
+  armed: boolean
+  flying: boolean
+  mission_active: boolean
+  current_waypoint: number
+  total_waypoints: number
+  flight_mode: string
+  battery_level: number
+}
 
-const MissionExecutionView: React.FC<MissionExecutionViewProps> = ({ 
-  mission, 
-  onBack,
-  onComplete,
-  onAbort
-}) => {
-  // State management with proper typing
-  const [state, setState] = useState<MissionExecutionState>({
-    droneConnected: false,
-    droneArmed: false,
-    missionUploaded: false,
-    missionRunning: false,
-    telemetry: null,
-    loading: false,
-    error: null
-  });
-  
-  const wsRef = useRef<WebSocket | null>(null);
+interface TelemetryData {
+  timestamp: string
+  drone_state: {
+    connected: boolean
+    armed: boolean
+    flying: boolean
+    current_position: {
+      lat: number
+      lon: number
+      alt: number
+    }
+    battery_level: number
+    flight_mode: string
+    mission_active: boolean
+    mission_current: number
+    mission_count: number
+  }
+  telemetry: {
+    position?: { lat: number; lon: number; alt: number }
+    velocity?: { vx: number; vy: number; vz: number }
+    attitude?: { roll: number; pitch: number; yaw: number }
+    battery?: { voltage: number; current: number; remaining: number }
+  }
+  geofence_violation: boolean
+  geofence_message: string
+}
 
-  // Update individual state properties
-  const updateState = useCallback((updates: Partial<MissionExecutionState>) => {
-    setState(prev => ({ ...prev, ...updates }));
-  }, []);
+export default function MissionExecutionView({ missionId, onBack }: MissionExecutionViewProps) {
+  // State Management
+  const [isConnected, setIsConnected] = useState(false)
+  const [missionStatus, setMissionStatus] = useState<MissionStatus>({
+    armed: false,
+    flying: false,
+    mission_active: false,
+    current_waypoint: 0,
+    total_waypoints: 0,
+    flight_mode: 'UNKNOWN',
+    battery_level: 0
+  })
+  const [telemetryData, setTelemetryData] = useState<TelemetryData | null>(null)
+  const [videoStream, setVideoStream] = useState<string | null>(null)
+  const [isVideoFullscreen, setIsVideoFullscreen] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [commandStatus, setCommandStatus] = useState<string>('')
+  const [alerts, setAlerts] = useState<Array<{ type: string; message: string; timestamp: string }>>([])
 
-  // Connect to drone on mount
+  // Refs
+  const wsRef = useRef<WebSocket | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  // WebSocket Connection for Real-time Telemetry
   useEffect(() => {
-    connectToDrone();
-    
+    connectWebSocket()
+
     return () => {
       if (wsRef.current) {
-        droneControlService.stopTelemetryStream();
+        wsRef.current.close()
       }
-    };
-  }, []);
+    }
+  }, [missionId])
 
-  // Connect to drone
-  const connectToDrone = async (): Promise<void> => {
+  const connectWebSocket = () => {
     try {
-      updateState({ loading: true });
+      // Connect to WebSocket telemetry server
+      const ws = new WebSocket('ws://localhost:8002/ws/telemetry')
       
-      const response = await droneControlService.connect();
-      
-      if (response.success) {
-        updateState({ 
-          droneConnected: true, 
-          error: null 
-        });
-        startTelemetryStream();
-      } else {
-        updateState({ error: 'Failed to connect to drone' });
+      ws.onopen = () => {
+        console.log('WebSocket connected')
+        setIsConnected(true)
+        
+        // Subscribe to mission telemetry
+        ws.send(JSON.stringify({
+          action: 'subscribe',
+          mission_id: missionId,
+          vehicle_id: 'UAV-001'
+        }))
+
+        addAlert('success', 'Connected to telemetry stream')
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Connection error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          
+          if (data.type === 'telemetry_update') {
+            handleTelemetryUpdate(data.data)
+          }
+        } catch (error) {
+          console.error('Error parsing telemetry:', error)
+        }
+      }
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error)
+        setIsConnected(false)
+        addAlert('error', 'Telemetry connection error')
+      }
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected')
+        setIsConnected(false)
+        
+        // Attempt to reconnect after 5 seconds
+        setTimeout(() => {
+          console.log('Attempting to reconnect...')
+          connectWebSocket()
+        }, 5000)
+      }
+
+      wsRef.current = ws
+    } catch (error) {
+      console.error('Failed to connect WebSocket:', error)
+      setIsConnected(false)
     }
-  };
+  }
 
-  // Start WebSocket telemetry stream
-  const startTelemetryStream = (): void => {
-    wsRef.current = droneControlService.startTelemetryStream({
-      onMessage: (data: TelemetryData) => {
-        updateState({ 
-          telemetry: data,
-          droneArmed: data.armed 
-        });
-      },
-      onError: (error: Event) => {
-        console.error('WebSocket error:', error);
-      },
-      onClose: () => {
-        console.log('Telemetry stream disconnected');
+  const handleTelemetryUpdate = (data: TelemetryData) => {
+    setTelemetryData(data)
+
+    // Update mission status
+    if (data.drone_state) {
+      setMissionStatus({
+        armed: data.drone_state.armed,
+        flying: data.drone_state.flying,
+        mission_active: data.drone_state.mission_active,
+        current_waypoint: data.drone_state.mission_current,
+        total_waypoints: data.drone_state.mission_count,
+        flight_mode: data.drone_state.flight_mode,
+        battery_level: data.drone_state.battery_level
+      })
+
+      // Check for alerts
+      if (data.drone_state.battery_level < 20) {
+        addAlert('warning', `Low battery: ${data.drone_state.battery_level}%`)
       }
-    });
-  };
 
-  // Drone control commands
-  const handleArm = async (): Promise<void> => {
+      if (data.geofence_violation) {
+        addAlert('error', `Geofence violation: ${data.geofence_message}`)
+      }
+    }
+  }
+
+  const addAlert = (type: string, message: string) => {
+    const newAlert = {
+      type,
+      message,
+      timestamp: new Date().toISOString()
+    }
+    setAlerts(prev => [newAlert, ...prev].slice(0, 10)) // Keep last 10 alerts
+  }
+
+  // Mission Control Commands
+  const handleArmVehicle = async () => {
     try {
-      updateState({ loading: true });
-      const response = await droneControlService.arm();
-      
-      if (response.success) {
-        updateState({ droneArmed: true });
-      } else {
-        updateState({ error: 'Failed to arm drone' });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Arm error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/arm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission_id: missionId })
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('success', 'Vehicle armed successfully')
+    } catch (error) {
+      console.error('Arm failed:', error)
+      addAlert('error', 'Failed to arm vehicle')
     }
-  };
+  }
 
-  const handleDisarm = async (): Promise<void> => {
+  const handleDisarmVehicle = async () => {
     try {
-      updateState({ loading: true });
-      const response = await droneControlService.disarm();
-      
-      if (response.success) {
-        updateState({ droneArmed: false });
-      } else {
-        updateState({ error: 'Failed to disarm drone' });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Disarm error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/disarm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission_id: missionId })
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('success', 'Vehicle disarmed')
+    } catch (error) {
+      console.error('Disarm failed:', error)
+      addAlert('error', 'Failed to disarm vehicle')
     }
-  };
+  }
 
-  const handleTakeoff = async (altitude: number = 10): Promise<void> => {
+  const handleTakeoff = async () => {
     try {
-      updateState({ loading: true });
-      const response = await droneControlService.takeoff(altitude);
-      
-      if (!response.success) {
-        updateState({ error: 'Failed to takeoff' });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Takeoff error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/takeoff`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission_id: missionId, altitude: 10 })
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('success', 'Takeoff initiated')
+    } catch (error) {
+      console.error('Takeoff failed:', error)
+      addAlert('error', 'Failed to initiate takeoff')
     }
-  };
+  }
 
-  const handleUploadMission = async (): Promise<void> => {
+  const handleLand = async () => {
     try {
-      updateState({ loading: true });
-      
-      // Convert mission waypoints to required format
-      const waypoints = droneControlService.formatWaypoints(mission.waypoints);
-
-      const response = await droneControlService.uploadMission(mission.id, waypoints);
-      
-      if (response.success) {
-        updateState({ 
-          missionUploaded: true, 
-          error: null 
-        });
-      } else {
-        updateState({ error: 'Failed to upload mission' });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Upload error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/land`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mission_id: missionId })
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('success', 'Landing initiated')
+    } catch (error) {
+      console.error('Landing failed:', error)
+      addAlert('error', 'Failed to initiate landing')
     }
-  };
+  }
 
-  const handleStartMission = async (): Promise<void> => {
+  const handleStartMission = async () => {
     try {
-      updateState({ loading: true });
-      const response = await droneControlService.startMission();
-      
-      if (response.success) {
-        updateState({ missionRunning: true });
-      } else {
-        updateState({ error: 'Failed to start mission' });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Start mission error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('success', 'Mission started')
+    } catch (error) {
+      console.error('Mission start failed:', error)
+      addAlert('error', 'Failed to start mission')
     }
-  };
+  }
 
-  const handleStopMission = async (): Promise<void> => {
+  const handlePauseMission = async () => {
     try {
-      updateState({ loading: true });
-      const response = await droneControlService.stopMission();
-      
-      if (response.success) {
-        updateState({ missionRunning: false });
-        if (onAbort) onAbort();
-      } else {
-        updateState({ error: 'Failed to stop mission' });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Stop mission error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('info', 'Mission paused')
+    } catch (error) {
+      console.error('Mission pause failed:', error)
+      addAlert('error', 'Failed to pause mission')
     }
-  };
+  }
 
-  const handleReturnToLaunch = async (): Promise<void> => {
+  const handleStopMission = async () => {
     try {
-      updateState({ loading: true });
-      const response = await droneControlService.returnToLaunch();
-      
-      if (response.success) {
-        updateState({ 
-          missionRunning: false,
-          error: null 
-        });
-      } else {
-        updateState({ error: 'Failed to return to launch' });
-      }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'RTL error';
-      updateState({ error: errorMessage });
-    } finally {
-      updateState({ loading: false });
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('warning', 'Mission stopped')
+    } catch (error) {
+      console.error('Mission stop failed:', error)
+      addAlert('error', 'Failed to stop mission')
     }
-  };
+  }
 
-  // Calculate map center from waypoints
-  const getMapCenter = (): [number, number] => {
-    if (mission?.waypoints && mission.waypoints.length > 0) {
-      const lats = mission.waypoints.map(wp => wp.lat);
-      const lngs = mission.waypoints.map(wp => wp.lng);
-      return [
-        (Math.min(...lats) + Math.max(...lats)) / 2,
-        (Math.min(...lngs) + Math.max(...lngs)) / 2
-      ];
+  const handleRTL = async () => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/missions/${missionId}/rtl`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      const data = await response.json()
+      setCommandStatus(data.message)
+      addAlert('info', 'Returning to launch')
+    } catch (error) {
+      console.error('RTL failed:', error)
+      addAlert('error', 'Failed to return to launch')
     }
-    return [26.7465, 80.8760]; // Default center
-  };
+  }
 
-  // Get flight path coordinates
-  const getFlightPath = (): [number, number][] => {
-    return mission.waypoints.map(wp => [wp.lat, wp.lng]);
-  };
+  // Video Controls
+  const handleStartVideo = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/camera/start_video', {
+        method: 'POST'
+      })
+      const data = await response.json()
+      setIsRecording(true)
+      addAlert('success', 'Video recording started')
+    } catch (error) {
+      console.error('Failed to start video:', error)
+      addAlert('error', 'Failed to start video')
+    }
+  }
+
+  const handleStopVideo = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/camera/stop_video', {
+        method: 'POST'
+      })
+      const data = await response.json()
+      setIsRecording(false)
+      addAlert('success', 'Video recording stopped')
+    } catch (error) {
+      console.error('Failed to stop video:', error)
+      addAlert('error', 'Failed to stop video')
+    }
+  }
+
+  const handleTakePhoto = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/camera/take_photo', {
+        method: 'POST'
+      })
+      const data = await response.json()
+      addAlert('success', 'Photo captured')
+    } catch (error) {
+      console.error('Failed to take photo:', error)
+      addAlert('error', 'Failed to capture photo')
+    }
+  }
+
+  const toggleFullscreen = () => {
+    setIsVideoFullscreen(!isVideoFullscreen)
+  }
+
+  const getStatusColor = (status: boolean) => {
+    return status ? 'text-green-400' : 'text-red-400'
+  }
+
+  const getBatteryColor = (level: number) => {
+    if (level > 50) return 'text-green-400'
+    if (level > 20) return 'text-yellow-400'
+    return 'text-red-400'
+  }
+
+  const getAlertIcon = (type: string) => {
+    switch (type) {
+      case 'success': return <CheckCircle size={16} className="text-green-400" />
+      case 'error': return <AlertTriangle size={16} className="text-red-400" />
+      case 'warning': return <AlertTriangle size={16} className="text-yellow-400" />
+      default: return <Activity size={16} className="text-blue-400" />
+    }
+  }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-900 text-white">
-      {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <button 
-            onClick={onBack}
-            className="text-gray-400 hover:text-white transition"
-          >
-            ← Back to Missions
-          </button>
-          <div>
-            <h1 className="text-xl font-bold">{mission?.name || 'Mission Execution'}</h1>
-            <p className="text-sm text-gray-400">
-              Distance: {mission?.distance || 0} km • Duration: {mission?.duration || 0} min
-            </p>
+    <div className="flex-1 bg-slate-900 min-h-screen">
+      <div className="p-6">
+        {/* Header */}
+        <div className="bg-slate-800 rounded-xl p-6 mb-6 border border-slate-700 shadow-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              {onBack && (
+                <button
+                  onClick={onBack}
+                  className="p-2 bg-slate-700 rounded-lg text-white hover:bg-slate-600 transition-colors"
+                >
+                  <ArrowLeft size={20} />
+                </button>
+              )}
+              <div>
+                <h1 className="text-3xl font-bold text-white mb-2">Mission Execution</h1>
+                <p className="text-slate-400">Mission ID: {missionId}</p>
+              </div>
+            </div>
+            
+            {/* Connection Status */}
+            <div className="flex items-center space-x-4">
+              <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${isConnected ? 'bg-green-500 bg-opacity-20' : 'bg-red-500 bg-opacity-20'}`}>
+                <Radio size={16} className={isConnected ? 'text-green-400' : 'text-red-400'} />
+                <span className={isConnected ? 'text-green-400' : 'text-red-400'}>
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              
+              <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${missionStatus.armed ? 'bg-orange-500 bg-opacity-20' : 'bg-slate-700'}`}>
+                <Target size={16} className={missionStatus.armed ? 'text-orange-400' : 'text-slate-400'} />
+                <span className={missionStatus.armed ? 'text-orange-400' : 'text-slate-400'}>
+                  {missionStatus.armed ? 'ARMED' : 'DISARMED'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
-        
-        {/* Connection Status */}
-        <div className="flex items-center space-x-2">
-          <div className={`w-3 h-3 rounded-full ${state.droneConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-          <span className="text-sm">
-            {state.droneConnected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Map Section */}
-        <div className="flex-1 relative">
-          <MapContainer
-            center={getMapCenter()}
-            zoom={10}
-            style={{ height: '100%', width: '100%' }}
-            className="z-0"
-          >
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
-            />
-            
-            {/* Flight Path */}
-            {mission?.waypoints && (
-              <Polyline
-                positions={getFlightPath()}
-                pathOptions={{ color: '#3b82f6', weight: 3, dashArray: '10, 10' }}
-              />
-            )}
-            
-            {/* Waypoint Markers */}
-            {mission?.waypoints && mission.waypoints.map((wp: Waypoint, index: number) => (
-              <Marker
-                key={index}
-                position={[wp.lat, wp.lng]}
-                icon={
-                  index === 0 
-                    ? startIcon 
-                    : index === mission.waypoints.length - 1 
-                    ? endIcon 
-                    : waypointIcon
-                }
-              >
-                <Popup>
-                  <div className="text-gray-900">
-                    <strong>{wp.name || `Waypoint ${index + 1}`}</strong>
-                    <br />
-                    Lat: {wp.lat.toFixed(4)}
-                    <br />
-                    Lng: {wp.lng.toFixed(4)}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-            
-            {/* Live Drone Position */}
-            {state.telemetry && state.telemetry.latitude !== 0 && (
-              <Marker
-                position={[state.telemetry.latitude, state.telemetry.longitude]}
-                icon={droneIcon}
-              >
-                <Popup>
-                  <div className="text-gray-900">
-                    <strong>Drone Position</strong>
-                    <br />
-                    Alt: {state.telemetry.relative_altitude.toFixed(1)}m
-                    <br />
-                    Speed: {state.telemetry.ground_speed.toFixed(1)}m/s
-                  </div>
-                </Popup>
-              </Marker>
-            )}
-          </MapContainer>
-        </div>
-
-        {/* Control Panel - CONTINUED IN NEXT FILE */}
-        <div className="w-96 bg-gray-800 border-l border-gray-700 flex flex-col overflow-y-auto">
-          {/* Error Display */}
-          {state.error && (
-            <div className="bg-red-900 border border-red-700 p-3 m-4 rounded flex items-center space-x-2">
-              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-              <span className="text-sm">{state.error}</span>
-            </div>
-          )}
-
-          {/* Control Buttons */}
-          <div className="p-4 space-y-3">
-            <h3 className="text-lg font-semibold mb-3">Drone Controls</h3>
-            
-            {/* Arm/Disarm */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={handleArm}
-                disabled={!state.droneConnected || state.droneArmed || state.loading}
-                className={`flex items-center justify-center space-x-2 py-3 px-4 rounded transition ${
-                  state.droneArmed 
-                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
-                    : 'bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-700 disabled:text-gray-500'
-                }`}
-              >
-                <Power className="w-5 h-5" />
-                <span>Arm</span>
-              </button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Column - Video Feed & Controls */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Video Feed */}
+            <div className={`bg-slate-800 rounded-xl border border-slate-700 shadow-xl overflow-hidden ${isVideoFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+              <div className="flex items-center justify-between p-4 bg-slate-900 border-b border-slate-700">
+                <h2 className="text-xl font-bold text-white flex items-center space-x-2">
+                  <Video size={20} className="text-blue-400" />
+                  <span>Live Video Feed</span>
+                </h2>
+                <div className="flex items-center space-x-2">
+                  {isRecording && (
+                    <div className="flex items-center space-x-2 px-3 py-1 bg-red-500 bg-opacity-20 rounded-lg">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                      <span className="text-red-400 text-sm font-medium">REC</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={toggleFullscreen}
+                    className="p-2 bg-slate-700 rounded-lg text-white hover:bg-slate-600 transition-colors"
+                  >
+                    <Maximize2 size={16} />
+                  </button>
+                </div>
+              </div>
               
-              <button
-                onClick={handleDisarm}
-                disabled={!state.droneConnected || !state.droneArmed || state.loading}
-                className={`flex items-center justify-center space-x-2 py-3 px-4 rounded transition ${
-                  !state.droneArmed 
-                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed' 
-                    : 'bg-red-600 hover:bg-red-700 text-white disabled:bg-gray-700 disabled:text-gray-500'
-                }`}
-              >
-                <PowerOff className="w-5 h-5" />
-                <span>Disarm</span>
-              </button>
+              <div className="relative bg-black aspect-video">
+                {/* Video stream would be rendered here */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <Video size={64} className="text-slate-600 mx-auto mb-4" />
+                    <p className="text-slate-500">Video stream will appear here</p>
+                    <p className="text-slate-600 text-sm mt-2">Connect to camera feed</p>
+                  </div>
+                </div>
+                
+                {/* Video Overlay - Position/Status Info */}
+                {telemetryData && (
+                  <div className="absolute top-4 left-4 bg-black bg-opacity-70 rounded-lg p-3 text-white text-sm space-y-1">
+                    <div className="flex items-center space-x-2">
+                      <MapPin size={14} className="text-blue-400" />
+                      <span>
+                        {telemetryData.drone_state.current_position.lat.toFixed(6)}, 
+                        {telemetryData.drone_state.current_position.lon.toFixed(6)}
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Gauge size={14} className="text-green-400" />
+                      <span>Alt: {telemetryData.drone_state.current_position.alt.toFixed(1)}m</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Navigation size={14} className="text-purple-400" />
+                      <span>{missionStatus.flight_mode}</span>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Battery Overlay */}
+                <div className="absolute top-4 right-4 bg-black bg-opacity-70 rounded-lg p-3">
+                  <div className="flex items-center space-x-2">
+                    <Battery size={20} className={getBatteryColor(missionStatus.battery_level)} />
+                    <span className={`font-bold ${getBatteryColor(missionStatus.battery_level)}`}>
+                      {missionStatus.battery_level}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Camera Controls */}
+              <div className="p-4 bg-slate-900 border-t border-slate-700">
+                <div className="flex items-center justify-center space-x-3">
+                  <button
+                    onClick={handleTakePhoto}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  >
+                    <Camera size={16} />
+                    <span>Photo</span>
+                  </button>
+                  
+                  {!isRecording ? (
+                    <button
+                      onClick={handleStartVideo}
+                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
+                    >
+                      <Video size={16} />
+                      <span>Start Recording</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleStopVideo}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center space-x-2"
+                    >
+                      <Square size={16} />
+                      <span>Stop Recording</span>
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* Takeoff */}
-            <button
-              onClick={() => handleTakeoff(10)}
-              disabled={!state.droneConnected || !state.droneArmed || state.loading}
-              className="w-full flex items-center justify-center space-x-2 py-3 px-4 rounded bg-blue-600 hover:bg-blue-700 transition disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
-            >
-              <ArrowUp className="w-5 h-5" />
-              <span>Takeoff</span>
-            </button>
-
-            {/* Mission Controls */}
-            <div className="border-t border-gray-700 pt-3 mt-3">
-              <h4 className="text-sm font-semibold mb-2">Mission Controls</h4>
+            {/* Mission Control Panel */}
+            <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center space-x-2">
+                <Settings size={20} className="text-blue-400" />
+                <span>Mission Control</span>
+              </h2>
               
-              <button
-                onClick={handleUploadMission}
-                disabled={!state.droneConnected || state.loading}
-                className={`w-full flex items-center justify-center space-x-2 py-3 px-4 rounded mb-2 transition ${
-                  state.missionUploaded
-                    ? 'bg-gray-700 text-gray-400'
-                    : 'bg-purple-600 hover:bg-purple-700 text-white'
-                } disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed`}
-              >
-                <Upload className="w-5 h-5" />
-                <span>{state.missionUploaded ? 'Mission Uploaded ✓' : 'Upload Mission'}</span>
-              </button>
+              {/* Mission Progress */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-slate-400">Mission Progress</span>
+                  <span className="text-white font-bold">
+                    {missionStatus.current_waypoint} / {missionStatus.total_waypoints} waypoints
+                  </span>
+                </div>
+                <div className="w-full bg-slate-700 rounded-full h-3">
+                  <div 
+                    className="bg-blue-500 h-3 rounded-full transition-all duration-500"
+                    style={{ 
+                      width: `${missionStatus.total_waypoints > 0 ? (missionStatus.current_waypoint / missionStatus.total_waypoints) * 100 : 0}%` 
+                    }}
+                  ></div>
+                </div>
+              </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              {/* Control Buttons Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {/* Pre-flight Controls */}
+                <button
+                  onClick={handleArmVehicle}
+                  disabled={missionStatus.armed}
+                  className="px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  <Target size={16} />
+                  <span>Arm</span>
+                </button>
+                
+                <button
+                  onClick={handleDisarmVehicle}
+                  disabled={!missionStatus.armed || missionStatus.flying}
+                  className="px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  <Target size={16} />
+                  <span>Disarm</span>
+                </button>
+                
+                {/* Flight Controls */}
+                <button
+                  onClick={handleTakeoff}
+                  disabled={!missionStatus.armed || missionStatus.flying}
+                  className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  <Upload size={16} />
+                  <span>Takeoff</span>
+                </button>
+                
+                <button
+                  onClick={handleLand}
+                  disabled={!missionStatus.flying}
+                  className="px-4 py-3 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  <ArrowLeft size={16} className="rotate-90" />
+                  <span>Land</span>
+                </button>
+                
+                {/* Mission Controls */}
                 <button
                   onClick={handleStartMission}
-                  disabled={!state.droneConnected || !state.missionUploaded || state.missionRunning || state.loading}
-                  className="flex items-center justify-center space-x-2 py-3 px-4 rounded bg-green-600 hover:bg-green-700 transition disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  disabled={!missionStatus.flying || missionStatus.mission_active}
+                  className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
                 >
-                  <Play className="w-5 h-5" />
+                  <Play size={16} />
                   <span>Start</span>
                 </button>
                 
                 <button
-                  onClick={handleStopMission}
-                  disabled={!state.droneConnected || !state.missionRunning || state.loading}
-                  className="flex items-center justify-center space-x-2 py-3 px-4 rounded bg-red-600 hover:bg-red-700 transition disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  onClick={handlePauseMission}
+                  disabled={!missionStatus.mission_active}
+                  className="px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
                 >
-                  <Square className="w-5 h-5" />
+                  <Pause size={16} />
+                  <span>Pause</span>
+                </button>
+                
+                <button
+                  onClick={handleStopMission}
+                  disabled={!missionStatus.mission_active}
+                  className="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  <Square size={16} />
                   <span>Stop</span>
                 </button>
+                
+                {/* Emergency Controls */}
+                <button
+                  onClick={handleRTL}
+                  disabled={!missionStatus.flying}
+                  className="px-4 py-3 bg-red-700 text-white rounded-lg hover:bg-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                >
+                  <Navigation size={16} />
+                  <span>RTL</span>
+                </button>
+              </div>
+
+              {/* Command Status */}
+              {commandStatus && (
+                <div className="mt-4 p-3 bg-slate-700 rounded-lg">
+                  <p className="text-slate-300 text-sm">{commandStatus}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Alerts Panel */}
+            <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 shadow-xl">
+              <h2 className="text-xl font-bold text-white mb-4 flex items-center space-x-2">
+                <AlertTriangle size={20} className="text-yellow-400" />
+                <span>Alerts & Notifications</span>
+              </h2>
+              
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {alerts.length === 0 ? (
+                  <p className="text-slate-500 text-center py-8">No alerts</p>
+                ) : (
+                  alerts.map((alert, index) => (
+                    <div
+                      key={index}
+                      className="p-3 bg-slate-700 rounded-lg flex items-start space-x-3"
+                    >
+                      {getAlertIcon(alert.type)}
+                      <div className="flex-1">
+                        <p className="text-white text-sm">{alert.message}</p>
+                        <p className="text-slate-500 text-xs mt-1">
+                          {new Date(alert.timestamp).toLocaleTimeString()}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
 
-          {/* Telemetry Display */}
-          <div className="flex-1 p-4 border-t border-gray-700">
-            <h3 className="text-lg font-semibold mb-3 flex items-center space-x-2">
-              <Activity className="w-5 h-5" />
-              <span>Live Telemetry</span>
-            </h3>
-            
-            <TelemetryPanel telemetry={state.telemetry} />
+          {/* Right Column - Telemetry Panel */}
+          <div className="lg:col-span-1">
+            <TelemetryPanel telemetryData={telemetryData} />
           </div>
         </div>
       </div>
     </div>
-  );
-};
-
-export default MissionExecutionView;
+  )
+}

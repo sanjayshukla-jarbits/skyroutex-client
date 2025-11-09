@@ -14,6 +14,7 @@ import Guide from './Guide'
 import VehicleLibrary from './VehicleLibrary'
 import OperatorLibrary from './OperatorLibrary'
 import { ApiMission } from '@/services/missionService'
+import MissionExecutionView from '@/components/MissionExecutionView'
 
 export default function DashboardLayout() {
   const [currentPage, setCurrentPage] = useState<string>('dashboard')
@@ -66,6 +67,12 @@ export default function DashboardLayout() {
         />
       )}
       {currentPage === 'mission-types' && <MissionTypes onPageChange={setCurrentPage} />}
+      {currentPage === 'execute-mission' && (
+        <MissionExecutionView 
+          missionId="MISSION-2024-001"
+          onBack={() => setCurrentPage('missions')}
+        />
+      )}
       {currentPage === 'awareness' && <LiveMap />}
       {currentPage === 'vehicles' && <VehicleLibrary />}
       {currentPage === 'operators' && <OperatorLibrary />}

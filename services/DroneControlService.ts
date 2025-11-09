@@ -1,287 +1,395 @@
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
 /**
- * TelemetryPanel Component - TypeScript Version
- * Displays real-time drone telemetry data with full type safety
+ * Interface definitions for API requests and responses
  */
+export interface ApiResponse {
+  success: boolean
+  message: string
+  data?: any
+  error?: string
+  timestamp: string
+}
 
-import React from 'react';
-import { 
-  Activity, 
-  Navigation, 
-  Battery, 
-  Satellite,
-  Gauge,
-  Wind
-} from 'lucide-react';
-import { TelemetryPanelProps, TelemetryData, GPSFixType } from './types';
+export interface VehicleArmRequest {
+  mission_id: string
+  force_arm?: boolean
+}
 
-const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ telemetry, compact = false }) => {
-  if (!telemetry) {
-    return (
-      <div className="text-center text-gray-400 py-8">
-        <Activity className="w-12 h-12 mx-auto mb-2 opacity-50 animate-pulse" />
-        <p className="text-sm">Waiting for telemetry data...</p>
-      </div>
-    );
+export interface VehicleDisarmRequest {
+  mission_id: string
+}
+
+export interface TakeoffRequest {
+  mission_id: string
+  altitude: number
+}
+
+export interface LandRequest {
+  mission_id: string
+}
+
+export interface RTLRequest {
+  mission_id: string
+}
+
+export interface MissionControlRequest {
+  force_start?: boolean
+  force_stop?: boolean
+}
+
+export interface DroneStatus {
+  connected: boolean
+  armed: boolean
+  flying: boolean
+  current_position: {
+    lat: number
+    lon: number
+    alt: number
+  }
+  home_position: {
+    lat: number
+    lon: number
+    alt: number
+  }
+  battery_level: number
+  flight_mode: string
+  mission_active: boolean
+  mission_current: number
+  mission_count: number
+  last_update?: string
+  message: string
+}
+
+export interface TelemetryData {
+  position?: {
+    lat: number
+    lon: number
+    alt: number
+  }
+  velocity?: {
+    vx: number
+    vy: number
+    vz: number
+  }
+  attitude?: {
+    roll: number
+    pitch: number
+    yaw: number
+  }
+  battery?: {
+    voltage: number
+    current: number
+    remaining: number
+  }
+  gps?: {
+    satellites: number
+    fix_type: number
+    hdop: number
+  }
+}
+
+/**
+ * DroneControlService - Handles all drone control operations
+ */
+class DroneControlService {
+  private baseUrl: string
+
+  constructor() {
+    this.baseUrl = API_BASE_URL
   }
 
-  // Helper function to get battery color
-  const getBatteryColor = (percentage: number): string => {
-    if (percentage > 50) return 'bg-green-500';
-    if (percentage > 20) return 'bg-yellow-500';
-    return 'bg-red-500';
-  };
+  // ============================================================================
+  // CONNECTION & STATUS
+  // ============================================================================
 
-  // Helper function to get GPS fix label
-  const getGPSFixLabel = (fixType: number): string => {
-    switch (fixType) {
-      case GPSFixType.NO_FIX:
-      case GPSFixType.NO_GPS:
-        return 'No Fix';
-      case GPSFixType.FIX_2D:
-        return '2D Fix';
-      case GPSFixType.FIX_3D:
-        return '3D Fix';
-      case GPSFixType.DGPS:
-        return 'DGPS';
-      case GPSFixType.RTK_FLOAT:
-        return 'RTK Float';
-      case GPSFixType.RTK_FIXED:
-        return 'RTK Fixed';
-      default:
-        return 'Unknown';
+  /**
+   * Get current drone status
+   */
+  async getStatus(): Promise<DroneStatus> {
+    const response = await fetch(`${this.baseUrl}/status`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to get status' }))
+      throw new Error(error.detail || 'Failed to get status')
     }
-  };
 
-  // Compact mode display
-  if (compact) {
-    return (
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        {/* Status */}
-        <div className="col-span-2 flex items-center justify-between bg-gray-700 rounded p-2">
-          <span className="text-gray-400">Status:</span>
-          <div className="flex items-center space-x-2">
-            <span className="font-semibold">{telemetry.mode}</span>
-            <span className={`px-2 py-0.5 rounded text-xs ${
-              telemetry.armed ? 'bg-green-600' : 'bg-gray-600'
-            }`}>
-              {telemetry.armed ? 'ARMED' : 'DISARMED'}
-            </span>
-          </div>
-        </div>
-
-        {/* Key Metrics */}
-        <div className="bg-gray-700 rounded p-2">
-          <div className="text-gray-400 text-xs">Altitude</div>
-          <div className="font-mono font-semibold">
-            {telemetry.relative_altitude.toFixed(1)}m
-          </div>
-        </div>
-
-        <div className="bg-gray-700 rounded p-2">
-          <div className="text-gray-400 text-xs">Speed</div>
-          <div className="font-mono font-semibold">
-            {telemetry.ground_speed.toFixed(1)}m/s
-          </div>
-        </div>
-
-        <div className="bg-gray-700 rounded p-2">
-          <div className="text-gray-400 text-xs">Battery</div>
-          <div className="font-mono font-semibold">
-            {telemetry.battery_remaining}%
-          </div>
-        </div>
-
-        <div className="bg-gray-700 rounded p-2">
-          <div className="text-gray-400 text-xs">GPS</div>
-          <div className="font-mono font-semibold">
-            {telemetry.satellites_visible} sats
-          </div>
-        </div>
-      </div>
-    );
+    const data = await response.json()
+    return data.data || data
   }
 
-  // Full display mode
-  return (
-    <div className="space-y-3">
-      {/* Flight Status */}
-      <div className="bg-gray-700 rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-2">
-            <Activity className="w-5 h-5 text-blue-400" />
-            <span className="font-semibold">Flight Status</span>
-          </div>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-            telemetry.armed ? 'bg-green-600' : 'bg-gray-600'
-          }`}>
-            {telemetry.armed ? 'ARMED' : 'DISARMED'}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-sm text-gray-400">Mode</div>
-            <div className="font-semibold text-lg">{telemetry.mode}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-400">Heading</div>
-            <div className="font-mono text-lg">{telemetry.heading.toFixed(0)}°</div>
-          </div>
-        </div>
-      </div>
+  /**
+   * Get telemetry data
+   */
+  async getTelemetry(): Promise<TelemetryData> {
+    const response = await fetch(`${this.baseUrl}/telemetry`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
 
-      {/* Position */}
-      <div className="bg-gray-700 rounded-lg p-4">
-        <div className="flex items-center space-x-2 mb-3">
-          <Navigation className="w-5 h-5 text-blue-400" />
-          <span className="font-semibold">Position</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-sm text-gray-400">Latitude</div>
-            <div className="font-mono text-sm">{telemetry.latitude.toFixed(6)}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-400">Longitude</div>
-            <div className="font-mono text-sm">{telemetry.longitude.toFixed(6)}</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-400">Altitude (MSL)</div>
-            <div className="font-mono text-lg">{telemetry.altitude.toFixed(1)} m</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-400">Altitude (AGL)</div>
-            <div className="font-mono text-lg">{telemetry.relative_altitude.toFixed(1)} m</div>
-          </div>
-        </div>
-      </div>
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to get telemetry' }))
+      throw new Error(error.detail || 'Failed to get telemetry')
+    }
 
-      {/* Speed & Movement */}
-      <div className="bg-gray-700 rounded-lg p-4">
-        <div className="flex items-center space-x-2 mb-3">
-          <Wind className="w-5 h-5 text-blue-400" />
-          <span className="font-semibold">Speed & Movement</span>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div>
-            <div className="text-sm text-gray-400">Ground Speed</div>
-            <div className="font-mono text-lg">{telemetry.ground_speed.toFixed(1)}</div>
-            <div className="text-xs text-gray-500">m/s</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-400">Air Speed</div>
-            <div className="font-mono text-lg">{telemetry.air_speed.toFixed(1)}</div>
-            <div className="text-xs text-gray-500">m/s</div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-400">Climb Rate</div>
-            <div className={`font-mono text-lg ${
-              telemetry.climb_rate > 0 ? 'text-green-400' : 
-              telemetry.climb_rate < 0 ? 'text-red-400' : ''
-            }`}>
-              {telemetry.climb_rate > 0 ? '+' : ''}{telemetry.climb_rate.toFixed(1)}
-            </div>
-            <div className="text-xs text-gray-500">m/s</div>
-          </div>
-        </div>
-      </div>
+    return response.json()
+  }
 
-      {/* Battery */}
-      <div className="bg-gray-700 rounded-lg p-4">
-        <div className="flex items-center space-x-2 mb-3">
-          <Battery className="w-5 h-5 text-blue-400" />
-          <span className="font-semibold">Battery</span>
-        </div>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="text-sm text-gray-400">Voltage</div>
-              <div className="font-mono text-lg">{telemetry.battery_voltage.toFixed(2)} V</div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-400">Current</div>
-              <div className="font-mono text-lg">{telemetry.battery_current.toFixed(2)} A</div>
-            </div>
-          </div>
-          
-          <div>
-            <div className="text-sm text-gray-400 mb-2">Remaining Capacity</div>
-            <div className="relative w-full bg-gray-600 rounded-full h-6 overflow-hidden">
-              <div 
-                className={`absolute inset-y-0 left-0 transition-all duration-300 ${getBatteryColor(telemetry.battery_remaining)}`}
-                style={{ width: `${telemetry.battery_remaining}%` }}
-              >
-                <div className="absolute inset-0 opacity-20 animate-pulse bg-white" />
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="font-mono font-bold text-white drop-shadow-lg">
-                  {telemetry.battery_remaining}%
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          {telemetry.battery_remaining < 20 && (
-            <div className="bg-red-900 border border-red-700 rounded p-2 text-sm">
-              ⚠️ Low battery warning!
-            </div>
-          )}
-        </div>
-      </div>
+  /**
+   * Connect to simulator
+   */
+  async connect(): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/connect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
 
-      {/* GPS */}
-      <div className="bg-gray-700 rounded-lg p-4">
-        <div className="flex items-center space-x-2 mb-3">
-          <Satellite className="w-5 h-5 text-blue-400" />
-          <span className="font-semibold">GPS</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <div className="text-sm text-gray-400">Fix Type</div>
-            <div className={`font-semibold text-lg ${
-              telemetry.gps_fix >= GPSFixType.FIX_3D ? 'text-green-400' : 'text-yellow-400'
-            }`}>
-              {getGPSFixLabel(telemetry.gps_fix)}
-            </div>
-          </div>
-          <div>
-            <div className="text-sm text-gray-400">Satellites</div>
-            <div className="font-mono text-lg">{telemetry.satellites_visible}</div>
-          </div>
-        </div>
-        
-        {telemetry.gps_fix < GPSFixType.FIX_3D && (
-          <div className="mt-3 bg-yellow-900 border border-yellow-700 rounded p-2 text-sm">
-            ⚠️ Waiting for GPS lock...
-          </div>
-        )}
-      </div>
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to connect' }))
+      throw new Error(error.detail || 'Failed to connect to simulator')
+    }
 
-      {/* Additional Info */}
-      <div className="bg-gray-700 rounded-lg p-4">
-        <div className="flex items-center space-x-2 mb-3">
-          <Gauge className="w-5 h-5 text-blue-400" />
-          <span className="font-semibold">System Info</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <div className="text-gray-400">Last Update</div>
-            <div className="font-mono">
-              {new Date(telemetry.timestamp).toLocaleTimeString()}
-            </div>
-          </div>
-          <div>
-            <div className="text-gray-400">System Status</div>
-            <div className="text-green-400 font-semibold">HEALTHY</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+    return response.json()
+  }
 
-export default TelemetryPanel;
+  // ============================================================================
+  // VEHICLE COMMANDS
+  // ============================================================================
 
-// Export compact version as separate component
-export const CompactTelemetryPanel: React.FC<Omit<TelemetryPanelProps, 'compact'>> = (props) => (
-  <TelemetryPanel {...props} compact={true} />
-);
+  /**
+   * Arm vehicle motors
+   */
+  async armVehicle(missionId: string, forceArm: boolean = false): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vehicle/arm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        mission_id: missionId,
+        force_arm: forceArm,
+      } as VehicleArmRequest),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to arm vehicle' }))
+      throw new Error(error.detail || 'Failed to arm vehicle')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Disarm vehicle motors
+   */
+  async disarmVehicle(missionId: string): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vehicle/disarm`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        mission_id: missionId,
+      } as VehicleDisarmRequest),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to disarm vehicle' }))
+      throw new Error(error.detail || 'Failed to disarm vehicle')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Takeoff to specified altitude
+   */
+  async takeoff(missionId: string, altitude: number): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vehicle/takeoff`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        mission_id: missionId,
+        altitude: altitude,
+      } as TakeoffRequest),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to takeoff' }))
+      throw new Error(error.detail || 'Failed to initiate takeoff')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Land vehicle
+   */
+  async land(missionId: string): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vehicle/land`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        mission_id: missionId,
+      } as LandRequest),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to land' }))
+      throw new Error(error.detail || 'Failed to initiate landing')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Return to launch
+   */
+  async returnToLaunch(missionId: string): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/vehicle/rtl`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        mission_id: missionId,
+      } as RTLRequest),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to RTL' }))
+      throw new Error(error.detail || 'Failed to initiate Return to Launch')
+    }
+
+    return response.json()
+  }
+
+  // ============================================================================
+  // MISSION CONTROL
+  // ============================================================================
+
+  /**
+   * Start mission execution
+   */
+  async startMission(missionId: string, forceStart: boolean = false): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/missions/${missionId}/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        force_start: forceStart,
+      } as MissionControlRequest),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to start mission' }))
+      throw new Error(error.detail || 'Failed to start mission')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Pause mission execution
+   */
+  async pauseMission(missionId: string): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/missions/${missionId}/pause`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to pause mission' }))
+      throw new Error(error.detail || 'Failed to pause mission')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Stop mission execution
+   */
+  async stopMission(missionId: string, forceStop: boolean = false): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/missions/${missionId}/stop`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        force_stop: forceStop,
+      } as MissionControlRequest),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to stop mission' }))
+      throw new Error(error.detail || 'Failed to stop mission')
+    }
+
+    return response.json()
+  }
+
+  /**
+   * Get mission status
+   */
+  async getMissionStatus(missionId: string): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/api/v1/missions/${missionId}/status`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to get mission status' }))
+      throw new Error(error.detail || 'Failed to get mission status')
+    }
+
+    return response.json()
+  }
+
+  // ============================================================================
+  // MISSION UPLOAD
+  // ============================================================================
+
+  /**
+   * Upload mission waypoints to vehicle
+   */
+  async uploadMission(waypoints: Array<{ lat: number; lon: number; alt: number }>): Promise<ApiResponse> {
+    const response = await fetch(`${this.baseUrl}/mission/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        waypoints: waypoints,
+      }),
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to upload mission' }))
+      throw new Error(error.detail || 'Failed to upload mission')
+    }
+
+    return response.json()
+  }
+}
+
+// Export singleton instance
+const droneControlService = new DroneControlService()
+export default droneControlService
