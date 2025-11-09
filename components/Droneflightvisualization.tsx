@@ -384,29 +384,36 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     body: any,
     loadingKey: string,
     successMessage: string
-  ) => {
+    ) => {
     setLoading(prev => ({ ...prev, [loadingKey]: true }));
     
     try {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
+        });
+        
+        const data = await response.json();
+        
+        if (response.status === 422) {
+        // Validation error - show details
+        console.error('Validation error:', data);
+        showToast(`Validation failed: ${JSON.stringify(data.detail)}`, 'error');
+        return;
+        }
+        
+        if (data.success) {
         showToast(successMessage, 'success');
         await fetchStatus();
-      } else {
+        } else {
         showToast(data.message || 'Command failed', 'error');
-      }
+        }
     } catch (error) {
-      console.error(`Error executing ${loadingKey}:`, error);
-      showToast(`Failed to ${loadingKey}`, 'error');
+        console.error(`Error executing ${loadingKey}:`, error);
+        showToast(`Failed to ${loadingKey}`, 'error');
     } finally {
-      setLoading(prev => ({ ...prev, [loadingKey]: false }));
+        setLoading(prev => ({ ...prev, [loadingKey]: false }));
     }
   };
 
@@ -420,20 +427,32 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   };
 
   const handleArm = () => {
+    // Add validation
+    if (!currentMissionId) {
+        showToast('No mission selected. Please load a mission first.', 'error');
+        return;
+    }
+    
     handleCommand(
-      '/api/v1/vehicle/arm',
-      { mission_id: currentMissionId, force_arm: false },
-      'arm',
-      'Vehicle armed successfully'
+        '/api/v1/vehicle/arm',
+        { mission_id: currentMissionId, force_arm: false },
+        'arm',
+        'Vehicle armed successfully'
     );
   };
 
+   // Also add to other commands
   const handleDisarm = () => {
+    if (!currentMissionId) {
+        showToast('No mission selected', 'error');
+        return;
+    }
+    
     handleCommand(
-      '/api/v1/vehicle/disarm',
-      { mission_id: currentMissionId },
-      'disarm',
-      'Vehicle disarmed successfully'
+        '/api/v1/vehicle/disarm',
+        { mission_id: currentMissionId },
+        'disarm',
+        'Vehicle disarmed successfully'
     );
   };
 
@@ -552,14 +571,6 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     };
     
     initializeConnection();
-    
-    // Start status/telemetry polling
-    fetchStatus();
-    
-    telemetryInterval.current = setInterval(() => {
-      fetchStatus();
-      fetchTelemetry();
-    }, 1000);
     
     return () => {
       if (telemetryInterval.current) {

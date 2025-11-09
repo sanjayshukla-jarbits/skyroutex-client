@@ -6,8 +6,8 @@ import Sidebar from './Sidebar'
 import MissionListComponent from './MissionList'
 import RoutePlanning from './RoutePlanning'
 import { ApiMission } from '@/services/missionService'
+import DashboardAnalytics from './DashboardAnalytics'
 
-// Dynamically import components that use client-side only features
 const MissionTypes = dynamic(() => import('./MissionTypes'), { ssr: false })
 const DroneFlightVisualization = dynamic(() => import('./Droneflightvisualization'), { ssr: false })
 const LiveMap = dynamic(() => import('./LiveMap'), { ssr: false })
@@ -18,7 +18,7 @@ const Settings = dynamic(() => import('./Settings'), { ssr: false })
 const Guide = dynamic(() => import('./Guide'), { ssr: false })
 
 export default function DashboardLayout() {
-  const [currentPage, setCurrentPage] = useState('missions')
+  const [currentPage, setCurrentPage] = useState('dashboard')
   const [selectedMission, setSelectedMission] = useState<ApiMission | null>(null)
   const [editMode, setEditMode] = useState(false)
 
@@ -62,6 +62,8 @@ export default function DashboardLayout() {
     <div className="flex h-screen bg-gray-950">
       <Sidebar currentPage={currentPage} onPageChange={setCurrentPage} />
       
+      {currentPage === 'dashboard' && <DashboardAnalytics />}
+
       {currentPage === 'missions' && (
         <MissionListComponent 
           onPageChange={setCurrentPage} 
@@ -83,7 +85,7 @@ export default function DashboardLayout() {
         <DroneFlightVisualization 
           selectedMission={selectedMission ? {
             id: selectedMission.id,
-            name: selectedMission.name,
+            name: selectedMission.mission_name || selectedMission.name || 'Unnamed Mission',
             waypoints: selectedMission.waypoints.map(wp => {
               const wpAny = wp as any;
               
@@ -103,8 +105,8 @@ export default function DashboardLayout() {
                 name: wp.name
               };
             }),
-            corridor: selectedMission.corridor,
-            distance: selectedMission.distance,
+            corridor: selectedMission.corridor_label || selectedMission.corridor_value || selectedMission.corridor,
+            distance: selectedMission.total_distance,
             status: selectedMission.status
           } : null}
           onBack={handleBackToMissions}
