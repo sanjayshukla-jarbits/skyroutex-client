@@ -546,6 +546,14 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   // ============================================================================
 
   useEffect(() => {
+    // Auto-connect to simulator on mount
+    const initializeConnection = async () => {
+      await connectToSimulator();
+    };
+    
+    initializeConnection();
+    
+    // Start status/telemetry polling
     fetchStatus();
     
     telemetryInterval.current = setInterval(() => {
@@ -624,32 +632,70 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
                 <ArrowLeft size={24} className="text-white" />
               </button>
             )}
-            <div>
-              <h1 className="text-2xl font-bold text-white">🚁 Drone Flight Monitor</h1>
+            <div className="flex items-center gap-6">
+              <div>
+                <h1 className="text-2xl font-bold text-white">🚁 Drone Flight Monitor</h1>
+                {selectedMission && (
+                  <p className="text-sm text-gray-400 mt-1">
+                    Mission: {selectedMission.name}
+                    {selectedMission.corridor && ` • ${selectedMission.corridor}`}
+                  </p>
+                )}
+              </div>
+              
+              {/* Mission Info in Header */}
               {selectedMission && (
-                <p className="text-sm text-gray-400 mt-1">
-                  Mission: {selectedMission.name}
-                  {selectedMission.corridor && ` • ${selectedMission.corridor}`}
-                </p>
+                <div className="flex items-center gap-4 px-4 py-2 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">ID:</span>
+                    <span className="text-sm font-mono text-blue-400 font-semibold">{selectedMission.id}</span>
+                  </div>
+                  <div className="h-4 w-px bg-gray-700"></div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">Waypoints:</span>
+                    <span className="text-sm text-white font-semibold">{validWaypoints.length} / {selectedMission.waypoints.length}</span>
+                  </div>
+                  {selectedMission.distance && (
+                    <>
+                      <div className="h-4 w-px bg-gray-700"></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">Distance:</span>
+                        <span className="text-sm text-white font-semibold">{selectedMission.distance.toFixed(2)} km</span>
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+          </div>
+          
+          <div className="flex items-center gap-4">
+            {/* Connection Status */}
+            <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 rounded-lg border border-gray-700">
+              <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
               <span className="text-sm text-gray-400">
                 {isConnected ? 'Connected' : 'Disconnected'}
               </span>
             </div>
+            
+            {/* Manual Connect Button (only if not connected) */}
+            {!isConnected && (
+              <button
+                onClick={connectToSimulator}
+                disabled={loading.connect}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded-lg transition-colors flex items-center gap-2"
+              >
+                {loading.connect ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  'Reconnect'
+                )}
+              </button>
+            )}
           </div>
-          
-          {!isConnected && (
-            <button
-              onClick={connectToSimulator}
-              disabled={loading.connect}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded-lg transition-colors"
-            >
-              {loading.connect ? 'Connecting...' : 'Connect to Simulator'}
-            </button>
-          )}
         </div>
       </div>
 
@@ -873,39 +919,6 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         {/* Control Panel */}
         <div className="w-96 bg-gray-900 border-l border-gray-800 p-6 overflow-y-auto">
           <h2 className="text-xl font-bold text-white mb-6">Mission Control</h2>
-
-          {/* Selected Mission Info */}
-          {selectedMission && (
-            <div className="mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <h3 className="text-sm font-bold text-blue-400 mb-2">SELECTED MISSION</h3>
-              <div className="text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">ID:</span>
-                  <span className="text-white font-mono">{selectedMission.id}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Name:</span>
-                  <span className="text-white">{selectedMission.name}</span>
-                </div>
-                {selectedMission.corridor && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Corridor:</span>
-                    <span className="text-white">{selectedMission.corridor}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Waypoints:</span>
-                  <span className="text-white">{validWaypoints.length} / {selectedMission.waypoints.length}</span>
-                </div>
-                {selectedMission.distance && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Distance:</span>
-                    <span className="text-white">{selectedMission.distance.toFixed(2)} km</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Mission ID Input */}
           <div className="mb-6">
