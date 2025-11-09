@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { ArrowLeft } from 'lucide-react';
+import TelemetryDisplay from '@/components/TelemetryDisplay';
 
 // Fix Leaflet default icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -136,7 +137,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   const [isConnected, setIsConnected] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [currentMissionId, setCurrentMissionId] = useState<string>(
-    selectedMission?.id || 'MISSION-001'
+    selectedMission?.id || '13'
   );
   const [takeoffAltitude, setTakeoffAltitude] = useState<number>(10);
   const [loading, setLoading] = useState<{[key: string]: boolean}>({});
@@ -1013,239 +1014,11 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
           </MapContainer>
 
           {/* Telemetry Display */}
-            <div className={`absolute top-4 right-4 bg-gray-900/95 backdrop-blur-sm rounded-lg p-4 border ${
-            telemetryPulse ? 'border-green-400 shadow-lg shadow-green-400/50' : 'border-gray-700'
-            } min-w-[320px] z-[1000] transition-all duration-200`}>
-            
-            {/* Header */}
-            <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-                Live Telemetry
-                {wsConnected && (
-                    <span className="text-xs text-green-400 flex items-center gap-1 px-2 py-1 bg-green-400/10 rounded-full">
-                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                    WebSocket
-                    </span>
-                )}
-                {!wsConnected && isConnected && (
-                    <span className="text-xs text-yellow-400 flex items-center gap-1 px-2 py-1 bg-yellow-400/10 rounded-full">
-                    <span className="w-2 h-2 bg-yellow-400 rounded-full"></span>
-                    Polling
-                    </span>
-                )}
-                </h3>
-            </div>
-            
-            {/* Update Info Bar */}
-            <div className="mb-3 pb-3 border-b border-gray-700 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                <span className="text-gray-400">Update Rate:</span>
-                <span className={`font-mono font-bold ${
-                    updateFrequency > 5 ? 'text-green-400' : 
-                    updateFrequency > 1 ? 'text-yellow-400' : 
-                    'text-red-400'
-                }`}>
-                    {updateFrequency} Hz
-                </span>
-                </div>
-                <div className="flex items-center gap-2">
-                <span className="text-gray-400">Last Update:</span>
-                <span className={`font-mono ${getDataFreshnessColor(lastTelemetryUpdate)}`}>
-                    {formatTimeAgo(lastTelemetryUpdate)}
-                </span>
-                </div>
-            </div>
-            
-            <div className="space-y-2 text-sm">
-                {/* Status */}
-                <div className="flex items-center gap-2">
-                <span className="text-gray-400 w-20">Status:</span>
-                <div className="flex gap-2">
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    status?.armed ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400'
-                    }`}>
-                    {status?.armed ? 'ARMED' : 'DISARMED'}
-                    </span>
-                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    status?.flying ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-400'
-                    }`}>
-                    {status?.flying ? 'FLYING' : 'LANDED'}
-                    </span>
-                </div>
-                </div>
-
-                {/* Flight Mode */}
-                <div className="flex items-center gap-2">
-                <span className="text-gray-400 w-20">Mode:</span>
-                <span className="text-blue-400 font-mono">{status?.flight_mode ?? 'N/A'}</span>
-                </div>
-
-                {/* Position - with visual update indicator */}
-                <div className="flex items-center gap-2">
-                <span className="text-gray-400 w-20">Position:</span>
-                <div className="text-white font-mono text-xs flex-1">
-                    <div className="flex items-center justify-between">
-                    <span>Lat: {(telemetry?.position?.lat ?? status?.current_position?.lat ?? 0).toFixed(6)}</span>
-                    {telemetry?.position?.lat && (
-                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse ml-2"></span>
-                    )}
-                    </div>
-                    <div className="flex items-center justify-between">
-                    <span>Lon: {(telemetry?.position?.lon ?? status?.current_position?.lon ?? 0).toFixed(6)}</span>
-                    {telemetry?.position?.lon && (
-                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse ml-2"></span>
-                    )}
-                    </div>
-                    <div className="flex items-center justify-between">
-                    <span>Alt: {(telemetry?.position?.alt ?? status?.current_position?.alt ?? 0).toFixed(1)}m</span>
-                    {telemetry?.position?.alt && (
-                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse ml-2"></span>
-                    )}
-                    </div>
-                </div>
-                </div>
-
-                {/* Velocity - with calculated ground speed */}
-                {telemetry?.velocity && (
-                <div className="flex items-center gap-2">
-                    <span className="text-gray-400 w-20">Velocity:</span>
-                    <div className="text-white font-mono text-xs flex-1">
-                    <div>X: {(telemetry.velocity.vx ?? 0).toFixed(2)} m/s</div>
-                    <div>Y: {(telemetry.velocity.vy ?? 0).toFixed(2)} m/s</div>
-                    <div>Z: {(telemetry.velocity.vz ?? 0).toFixed(2)} m/s</div>
-                    <div className="text-cyan-400 mt-1">
-                        Ground: {Math.sqrt(
-                        Math.pow(telemetry.velocity.vx ?? 0, 2) + 
-                        Math.pow(telemetry.velocity.vy ?? 0, 2)
-                        ).toFixed(2)} m/s
-                    </div>
-                    </div>
-                </div>
-                )}
-
-                {/* Attitude - with visual orientation */}
-                {telemetry?.attitude && (
-                <div className="flex items-center gap-2">
-                    <span className="text-gray-400 w-20">Attitude:</span>
-                    <div className="text-white font-mono text-xs flex-1">
-                    <div className="flex items-center justify-between">
-                        <span>Roll: {((telemetry.attitude.roll ?? 0) * 180 / Math.PI).toFixed(1)}°</span>
-                        <div className="w-12 h-1 bg-gray-700 rounded overflow-hidden">
-                        <div 
-                            className="h-full bg-blue-400 transition-all duration-200"
-                            style={{ 
-                            width: `${Math.abs((telemetry.attitude.roll ?? 0) * 180 / Math.PI) / 90 * 100}%`,
-                            marginLeft: (telemetry.attitude.roll ?? 0) < 0 ? '0' : 'auto'
-                            }}
-                        ></div>
-                        </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span>Pitch: {((telemetry.attitude.pitch ?? 0) * 180 / Math.PI).toFixed(1)}°</span>
-                        <div className="w-12 h-1 bg-gray-700 rounded overflow-hidden">
-                        <div 
-                            className="h-full bg-green-400 transition-all duration-200"
-                            style={{ 
-                            width: `${Math.abs((telemetry.attitude.pitch ?? 0) * 180 / Math.PI) / 90 * 100}%`,
-                            marginLeft: (telemetry.attitude.pitch ?? 0) < 0 ? '0' : 'auto'
-                            }}
-                        ></div>
-                        </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span>Yaw: {((telemetry.attitude.yaw ?? 0) * 180 / Math.PI).toFixed(1)}°</span>
-                        <span className="text-xs text-gray-400">
-                        ({['N','NE','E','SE','S','SW','W','NW'][Math.round(((telemetry.attitude.yaw ?? 0) * 180 / Math.PI + 360) / 45) % 8]})
-                        </span>
-                    </div>
-                    </div>
-                </div>
-                )}
-
-                {/* Battery - with detailed info */}
-                <div className="flex items-center gap-2">
-                <span className="text-gray-400 w-20">Battery:</span>
-                <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                    <div className="flex-1 bg-gray-700 rounded-full h-2 overflow-hidden">
-                        <div
-                        className={`h-full transition-all duration-300 ${
-                            (telemetry?.battery?.remaining ?? status?.battery_level ?? 0) > 50
-                            ? 'bg-green-500'
-                            : (telemetry?.battery?.remaining ?? status?.battery_level ?? 0) > 20
-                            ? 'bg-yellow-500'
-                            : 'bg-red-500'
-                        }`}
-                        style={{ width: `${telemetry?.battery?.remaining ?? status?.battery_level ?? 0}%` }}
-                        />
-                    </div>
-                    <span className="text-white font-bold min-w-[45px]">
-                        {(telemetry?.battery?.remaining ?? status?.battery_level ?? 0).toFixed(0)}%
-                    </span>
-                    </div>
-                    {telemetry?.battery && (
-                    <div className="text-xs space-y-0.5">
-                        <div className="flex items-center justify-between text-gray-400">
-                        <span>Voltage:</span>
-                        <span className="text-white font-mono">{(telemetry.battery.voltage ?? 0).toFixed(2)}V</span>
-                        </div>
-                        <div className="flex items-center justify-between text-gray-400">
-                        <span>Current:</span>
-                        <span className="text-white font-mono">{(telemetry.battery.current ?? 0).toFixed(2)}A</span>
-                        </div>
-                        <div className="flex items-center justify-between text-gray-400">
-                        <span>Power:</span>
-                        <span className="text-cyan-400 font-mono">
-                            {((telemetry.battery.voltage ?? 0) * (telemetry.battery.current ?? 0)).toFixed(1)}W
-                        </span>
-                        </div>
-                    </div>
-                    )}
-                </div>
-                </div>
-
-                {/* GPS - with signal quality indicator */}
-                {telemetry?.gps && (
-                <div className="flex items-center gap-2">
-                    <span className="text-gray-400 w-20">GPS:</span>
-                    <div className="text-white font-mono text-xs flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                        <span>Satellites:</span>
-                        <span className={`font-bold ${
-                        (telemetry.gps.satellites ?? 0) >= 8 ? 'text-green-400' :
-                        (telemetry.gps.satellites ?? 0) >= 5 ? 'text-yellow-400' :
-                        'text-red-400'
-                        }`}>
-                        {telemetry.gps.satellites ?? 0}
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between mb-1">
-                        <span>Fix Type:</span>
-                        <span className={`${
-                        (telemetry.gps.fix_type ?? 0) === 3 ? 'text-green-400' :
-                        (telemetry.gps.fix_type ?? 0) === 2 ? 'text-yellow-400' :
-                        'text-red-400'
-                        }`}>
-                        {telemetry.gps.fix_type === 3 ? '3D Fix' :
-                        telemetry.gps.fix_type === 2 ? '2D Fix' :
-                        'No Fix'}
-                        </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span>HDOP:</span>
-                        <span className={`${
-                        (telemetry.gps.hdop ?? 999) < 2 ? 'text-green-400' :
-                        (telemetry.gps.hdop ?? 999) < 5 ? 'text-yellow-400' :
-                        'text-red-400'
-                        }`}>
-                        {(telemetry.gps.hdop ?? 0).toFixed(2)}
-                        </span>
-                    </div>
-                    </div>
-                </div>
-                )}
-            </div>
-            </div>
+            <TelemetryDisplay 
+                telemetry={telemetry}
+                status={status}
+                wsConnected={wsConnected}
+            />
         </div>
 
         {/* Control Panel - (Rest of the control panel code remains the same) */}
