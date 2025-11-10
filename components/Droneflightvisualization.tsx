@@ -465,60 +465,18 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
 
     try {
       // Get mission waypoints from selectedMission
-      console.log('📍 Selected Mission:', {
-        id: selectedMission?.id,
-        name: selectedMission?.name,
-        waypoint_count: selectedMission?.waypoints?.length,
-        raw_waypoints: selectedMission?.waypoints
-      });
-
-      console.log('🔍 First waypoint detailed inspection:', {
-        waypoint: selectedMission?.waypoints?.[0],
-        keys: selectedMission?.waypoints?.[0] ? Object.keys(selectedMission.waypoints[0]) : [],
-        lat_value: selectedMission?.waypoints?.[0]?.lat,
-        lon_value: selectedMission?.waypoints?.[0]?.lon,
-        lng_value: selectedMission?.waypoints?.[0]?.lng,
-        alt_value: selectedMission?.waypoints?.[0]?.alt,
-        lat_type: typeof selectedMission?.waypoints?.[0]?.lat,
-        lon_type: typeof selectedMission?.waypoints?.[0]?.lon,
-        lng_type: typeof selectedMission?.waypoints?.[0]?.lng,
-        alt_type: typeof selectedMission?.waypoints?.[0]?.alt
-      });
-
       if (!selectedMission?.waypoints || selectedMission.waypoints.length === 0) {
         throw new Error('No waypoints in selected mission');
       }
 
+      console.log(`📤 Uploading mission ${currentMissionId} with ${selectedMission.waypoints.length} waypoints`);
+
       // Format waypoints for backend - must be List[Dict[str, float]]
       const waypoints = selectedMission.waypoints.map((wp, index) => {
-        console.log(`\n🔍 Processing waypoint ${index}:`, {
-          raw_object: wp,
-          all_keys: Object.keys(wp),
-          lat: wp.lat,
-          lon: wp.lon,
-          lng: wp.lng,
-          alt: wp.alt
-        });
-
         const lng = getWaypointLongitude(wp);
         
-        console.log(`Waypoint ${index} after getWaypointLongitude:`, {
-          original: wp,
-          lat: wp.lat,
-          lng: lng,
-          alt: wp.alt,
-          lat_type: typeof wp.lat,
-          lng_type: typeof lng,
-          alt_type: typeof wp.alt
-        });
-
         if (wp.lat === undefined || wp.lat === null || lng === undefined || lng === null) {
-          console.error(`❌ Missing coordinates at waypoint ${index}:`, {
-            lat: wp.lat,
-            lng: lng,
-            has_lat: wp.lat !== undefined && wp.lat !== null,
-            has_lng: lng !== undefined && lng !== null
-          });
+          console.error(`❌ Invalid waypoint ${index}:`, wp);
           throw new Error(`Invalid waypoint at index ${index}: missing lat or lon`);
         }
 
@@ -535,34 +493,21 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
           }
         }
 
-        console.log(`Waypoint ${index} conversion results:`, {
-          latitude: { original: wp.lat, converted: latitude, isValid: !isNaN(latitude) },
-          longitude: { original: lng, converted: longitude, isValid: !isNaN(longitude) },
-          altitude: { original: wp.alt, converted: altitude, isValid: !isNaN(altitude) }
-        });
-
         // Validate that all are valid numbers
         if (isNaN(latitude) || isNaN(longitude) || isNaN(altitude)) {
-          console.error(`❌ Invalid number conversion at waypoint ${index}:`, {
-            latitude: { value: wp.lat, converted: latitude, isNaN: isNaN(latitude) },
-            longitude: { value: lng, converted: longitude, isNaN: isNaN(longitude) },
-            altitude: { value: wp.alt, converted: altitude, isNaN: isNaN(altitude) }
+          console.error(`❌ Invalid conversion at waypoint ${index}:`, {
+            lat: wp.lat, lng, alt: wp.alt,
+            converted: { latitude, longitude, altitude }
           });
-          throw new Error(`Invalid coordinate values at waypoint ${index}: lat=${isNaN(latitude)?'NaN':'OK'}, lon=${isNaN(longitude)?'NaN':'OK'}, alt=${isNaN(altitude)?'NaN':'OK'}`);
+          throw new Error(`Invalid coordinate values at waypoint ${index}`);
         }
 
-        const formattedWp = {
+        return {
           latitude: latitude,
           longitude: longitude,
           altitude: altitude
         };
-
-        console.log(`✅ Formatted waypoint ${index}:`, formattedWp);
-
-        return formattedWp;
       });
-
-      console.log('✅ Formatted waypoints:', waypoints);
 
       // Double-check: ensure all waypoints have valid numeric values
       const cleanedWaypoints = waypoints.map((wp, idx) => {
@@ -581,7 +526,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         return cleaned;
       });
 
-      console.log('🧹 Cleaned waypoints (final):', cleanedWaypoints);
+      console.log(`✅ Prepared ${cleanedWaypoints.length} waypoints for upload`);
 
       // Prepare the payload matching SkyrouteXMissionUpload model
       const payload = {
@@ -596,11 +541,8 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         delete (payload as any).connection_string;
       }
 
-      console.log('📦 Request payload:', JSON.stringify(payload, null, 2));
-
       // Mission ID is in the URL path
       const url = `${API_BASE}/api/v1/missions/upload-to-px4/${currentMissionId}`;
-      console.log('🌐 Request URL:', url);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -610,15 +552,12 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         body: JSON.stringify(payload),
       });
 
-      console.log('📡 Response status:', response.status, response.statusText);
-
       const data = await response.json();
-      console.log('📡 Response data:', data);
 
       if (!response.ok) {
         // Log detailed validation error
         if (response.status === 422 && data.detail) {
-          console.error('❌ Validation Error Details:', JSON.stringify(data.detail, null, 2));
+          console.error('❌ Validation Error:', data.detail);
           
           // Extract validation error messages
           let errorMsg = 'Validation failed:\n';
@@ -634,16 +573,13 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
           throw new Error(errorMsg);
         }
         
-        console.error('❌ Upload failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          data: data
-        });
+        console.error('❌ Upload failed:', response.status, data);
         throw new Error(data.detail || data.message || `HTTP ${response.status}: Upload failed`);
       }
 
       if (data.success) {
         const waypointCount = data.waypoint_count || data.data?.waypoint_count || waypoints.length;
+        console.log(`✅ Mission uploaded: ${waypointCount} waypoints`);
         showToast(`✅ Mission uploaded! ${waypointCount} waypoints transferred to PX4`, 'success');
         setMissionUploaded(true);
         
@@ -663,18 +599,150 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     }
   };
 
-  const handleStartMission = () => {
+  const handleStartMission = async () => {
     if (!missionUploaded) {
       showToast('Please upload mission to PX4 first', 'error');
       return;
     }
     
-    handleCommand(
-      `/api/v1/missions/${currentMissionId}/start`,
-      { force_start: false },
-      'start',
-      '✅ Mission started successfully'
-    );
+    setLoading(prev => ({ ...prev, start: true }));
+    
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/missions/${currentMissionId}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_start: false }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.status === 400 && data.detail?.includes('already active')) {
+        setLoading(prev => ({ ...prev, start: false }));
+        
+        // Show custom toast with action buttons
+        showConfirmationToast(
+          '⚠️ A mission is already active. Stop current mission and start new one?',
+          async () => {
+            // User confirmed - stop and restart
+            setLoading(prev => ({ ...prev, start: true }));
+            showToast('Stopping current mission...', 'info');
+            
+            try {
+              const stopResponse = await fetch(`${API_BASE}/api/v1/missions/${currentMissionId}/stop`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ force_stop: true }),
+              });
+              
+              if (stopResponse.ok) {
+                showToast('✅ Current mission stopped', 'success');
+                
+                // Wait a moment then retry start
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                showToast('Starting new mission...', 'info');
+                
+                const retryResponse = await fetch(`${API_BASE}/api/v1/missions/${currentMissionId}/start`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ force_start: true }),
+                });
+                
+                const retryData = await retryResponse.json();
+                
+                if (retryData.success) {
+                  showToast('✅ New mission started successfully', 'success');
+                  
+                  // Refresh status
+                  setTimeout(async () => {
+                    for (let i = 0; i < 3; i++) {
+                      await new Promise(resolve => setTimeout(resolve, 300));
+                      await fetchStatus();
+                    }
+                  }, 500);
+                } else {
+                  throw new Error(retryData.message || 'Failed to start mission after stop');
+                }
+              } else {
+                throw new Error('Failed to stop current mission');
+              }
+            } catch (stopError: any) {
+              showToast(`❌ Failed: ${stopError.message}`, 'error');
+            } finally {
+              setLoading(prev => ({ ...prev, start: false }));
+            }
+          },
+          () => {
+            // User cancelled
+            showToast('Mission start cancelled', 'info');
+          }
+        );
+        
+        return; // Exit early since we're handling async confirmation
+      } else if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to start mission');
+      } else if (data.success) {
+        showToast('✅ Mission started successfully', 'success');
+      } else {
+        throw new Error(data.message || 'Command failed');
+      }
+    } catch (error: any) {
+      console.error('Error starting mission:', error);
+      showToast(`❌ Failed to start mission: ${error.message}`, 'error');
+    } finally {
+      setLoading(prev => ({ ...prev, start: false }));
+      
+      // Refresh status after operation
+      setTimeout(async () => {
+        for (let i = 0; i < 3; i++) {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          await fetchStatus();
+        }
+      }, 500);
+    }
+  };
+
+  const handleStopMission = async () => {
+    if (!currentMissionId) {
+      showToast('No mission selected', 'error');
+      return;
+    }
+
+    setLoading(prev => ({ ...prev, stop: true }));
+    showToast('Stopping mission...', 'info');
+
+    try {
+      const response = await fetch(`${API_BASE}/api/v1/missions/${currentMissionId}/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force_stop: false }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || data.message || 'Failed to stop mission');
+      }
+
+      if (data.success) {
+        showToast('✅ Mission stopped successfully', 'success');
+        
+        // Refresh status
+        setTimeout(async () => {
+          for (let i = 0; i < 3; i++) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchStatus();
+          }
+        }, 300);
+      } else {
+        throw new Error(data.message || 'Stop command failed');
+      }
+    } catch (error: any) {
+      console.error('Error stopping mission:', error);
+      showToast(`❌ Failed to stop mission: ${error.message}`, 'error');
+    } finally {
+      setLoading(prev => ({ ...prev, stop: false }));
+    }
   };
 
   const handleArm = () => {
@@ -794,6 +862,105 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
       toast.style.animation = 'slideOut 0.3s ease';
       setTimeout(() => document.body.removeChild(toast), 300);
     }, 3000);
+  };
+
+  const showConfirmationToast = (
+    message: string, 
+    onConfirm: () => void, 
+    onCancel: () => void
+  ) => {
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-confirmation';
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 16px 20px;
+      background: #f59e0b;
+      color: white;
+      border-radius: 8px;
+      z-index: 10000;
+      animation: slideIn 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      min-width: 400px;
+      max-width: 500px;
+    `;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.textContent = message;
+    messageDiv.style.cssText = `
+      margin-bottom: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    `;
+    
+    const buttonsDiv = document.createElement('div');
+    buttonsDiv.style.cssText = `
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    `;
+    
+    const confirmButton = document.createElement('button');
+    confirmButton.textContent = 'Stop & Start New';
+    confirmButton.style.cssText = `
+      padding: 8px 16px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: background 0.2s;
+    `;
+    confirmButton.onmouseover = () => confirmButton.style.background = '#dc2626';
+    confirmButton.onmouseout = () => confirmButton.style.background = '#ef4444';
+    confirmButton.onclick = () => {
+      document.body.removeChild(toast);
+      onConfirm();
+    };
+    
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel';
+    cancelButton.style.cssText = `
+      padding: 8px 16px;
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+      transition: background 0.2s;
+    `;
+    cancelButton.onmouseover = () => cancelButton.style.background = 'rgba(255,255,255,0.3)';
+    cancelButton.onmouseout = () => cancelButton.style.background = 'rgba(255,255,255,0.2)';
+    cancelButton.onclick = () => {
+      toast.style.animation = 'slideOut 0.3s ease';
+      setTimeout(() => document.body.removeChild(toast), 300);
+      onCancel();
+    };
+    
+    buttonsDiv.appendChild(cancelButton);
+    buttonsDiv.appendChild(confirmButton);
+    
+    toast.appendChild(messageDiv);
+    toast.appendChild(buttonsDiv);
+    document.body.appendChild(toast);
+    
+    // Auto-dismiss after 10 seconds if no action
+    setTimeout(() => {
+      if (document.body.contains(toast)) {
+        toast.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => {
+          if (document.body.contains(toast)) {
+            document.body.removeChild(toast);
+          }
+        }, 300);
+        onCancel();
+      }
+    }, 10000);
   };
 
   // ============================================================================
@@ -1328,6 +1495,24 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
             </button>
 
             <button
+              onClick={handleStopMission}
+              disabled={!isConnected || !status?.mission_active || loading.stop}
+              className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+            >
+              {loading.stop ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Stopping...
+                </>
+              ) : (
+                <>
+                  <span>⏹️</span>
+                  Stop Mission
+                </>
+              )}
+            </button>
+
+            <button
               onClick={handleArm}
               disabled={!isConnected || status?.armed || loading.arm}
               className="w-full px-4 py-3 bg-yellow-600 hover:bg-yellow-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -1506,6 +1691,19 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
             transform: translateX(100%);
             opacity: 0;
           }
+        }
+        
+        @keyframes pulse {
+          0%, 100% {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          }
+          50% {
+            box-shadow: 0 4px 20px rgba(245, 158, 11, 0.5);
+          }
+        }
+        
+        .toast-confirmation {
+          animation: slideIn 0.3s ease, pulse 2s ease-in-out infinite;
         }
       `}</style>
     </div>
