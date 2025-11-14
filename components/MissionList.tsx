@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Search, Plus, AlertTriangle, Trash2, Edit, Eye, Loader2, RefreshCw, Filter, Play, Pause, CheckCircle, Plane } from 'lucide-react'
+import { Search, Plus, AlertTriangle, Trash2, Edit, Eye, Loader2, RefreshCw, Filter, Play, Pause, CheckCircle, Plane, Map } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { usePX4Upload } from '@/hooks/usePX4Upload'
 import { Toaster } from 'react-hot-toast'
 import { 
@@ -18,15 +19,17 @@ interface MissionListComponentProps {
   onPageChange?: (page: string) => void
   onEditMission?: (mission: ApiMission) => void
   onViewMission?: (mission: ApiMission) => void
-  onVisualizeMission?: (mission: ApiMission) => void  // 🆕 NEW
+  onVisualizeMission?: (mission: ApiMission) => void
 }
 
 export default function MissionListComponent({ 
   onPageChange, 
   onEditMission, 
   onViewMission,
-  onVisualizeMission  // 🆕 NEW
+  onVisualizeMission
 }: MissionListComponentProps) {
+  const router = useRouter()
+  
   // State management
   const [missions, setMissions] = useState<ApiMission[]>([])
   const [loading, setLoading] = useState(true)
@@ -181,10 +184,26 @@ export default function MissionListComponent({
     }
   }
 
-  // 🆕 NEW: Handle visualizing mission on flight monitor
+  // 🔵 ORIGINAL: Handle visualizing mission on flight monitor (KEPT)
   const handleVisualizeMission = (mission: ApiMission) => {
     if (onVisualizeMission) {
       onVisualizeMission(mission)
+    }
+  }
+
+  // 🟢 NEW: Handle simulating mission with direct redirect to situational awareness
+  const handleSimulateMission = (mission: ApiMission) => {
+    try {
+      console.log('Simulating mission:', mission)
+      
+      // Store mission data in sessionStorage for the situational awareness page
+      sessionStorage.setItem('visualizeMission', JSON.stringify(mission))
+      
+      // Redirect to situational awareness page with simulation mode
+      router.push(`/situational-awareness?mode=simulate&missionId=${mission.id}`)
+    } catch (err) {
+      console.error('Error simulating mission:', err)
+      alert('Failed to simulate mission. Please try again.')
     }
   }
 
@@ -336,6 +355,8 @@ export default function MissionListComponent({
 
   return (
     <div className="flex-1 bg-slate-900 min-h-screen">
+      <Toaster position="top-right" />
+      
       <div className="p-8">
         {/* Header Section */}
         <div className="bg-blue-600 rounded-xl p-6 mb-6 shadow-xl">
@@ -523,7 +544,19 @@ export default function MissionListComponent({
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center space-x-2">
-                            {/* 🆕 VISUALIZE BUTTON - Always visible - NEW */}
+                            {/* 🟢 NEW: SIMULATE BUTTON - Green Map icon with redirect to SA */}
+                            <button
+                              onClick={() => handleSimulateMission(mission)}
+                              className="p-2 text-emerald-400 hover:bg-slate-600 rounded transition-colors group relative"
+                              title="Simulate Mission"
+                            >
+                              <Map size={18} />
+                              <span className="absolute hidden group-hover:block bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-slate-900 text-xs text-white rounded whitespace-nowrap z-10 shadow-lg">
+                                Simulate Mission
+                              </span>
+                            </button>
+
+                            {/* 🔵 ORIGINAL: VISUALIZE BUTTON - Purple Plane icon (KEPT) */}
                             <button
                               onClick={() => handleVisualizeMission(mission)}
                               className="p-2 text-purple-400 hover:bg-slate-600 rounded transition-colors group relative"

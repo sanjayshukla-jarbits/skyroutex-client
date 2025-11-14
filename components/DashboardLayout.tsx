@@ -8,9 +8,10 @@ import RoutePlanning from './RoutePlanning'
 import { ApiMission } from '@/services/missionService'
 import DashboardAnalytics from './DashboardAnalytics'
 import SituationalAwareness from './SituationalAwareness';
+import DroneFlightVisualization from './Droneflightvisualization';
 
 const MissionTypes = dynamic(() => import('./MissionTypes'), { ssr: false })
-const DroneFlightVisualization = dynamic(() => import('./Droneflightvisualization'), { ssr: false })
+// const DroneFlightVisualization = dynamic(() => import('./Droneflightvisualization'), { ssr: false })
 const LiveMap = dynamic(() => import('./LiveMap'), { ssr: false })
 const VehicleLibrary = dynamic(() => import('./VehicleLibrary'), { ssr: false })
 const OperatorLibrary = dynamic(() => import('./OperatorLibrary'), { ssr: false })

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Polygon, Tooltip, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -82,6 +82,47 @@ interface SelectedMissionData {
 
 interface SituationalAwarenessProps {
   selectedMission?: SelectedMissionData | null;
+  simulationMode?: boolean;
+  simulationActive?: boolean;
+}
+
+interface TelemetryData {
+  timestamp?: string;
+  position?: {
+    lat: number;
+    lon: number;
+    alt: number;
+  };
+  velocity?: {
+    vx: number;
+    vy: number;
+    vz: number;
+  };
+  attitude?: {
+    roll: number;
+    pitch: number;
+    yaw: number;
+  };
+  battery?: {
+    voltage: number;
+    current: number;
+    remaining: number;
+  };
+  gps?: {
+    satellites: number;
+    fix_type: number;
+    hdop: number;
+  };
+  armed?: boolean;
+  mode?: string;
+  mission_current?: number;
+  mission_count?: number;
+}
+
+interface FlightPathPoint {
+  lat: number;
+  lon: number;
+  timestamp: number;
 }
 
 // ============================================================================
@@ -126,113 +167,66 @@ const createDroneIcon = (color: string, heading: number = 0) => {
 const DEMO_DRONES: DemoDrone[] = [
   {
     id: 'UAV-001',
-    name: 'Northern Guardian',
-    callsign: 'ALPHA-1',
-    position: { lat: 26.7465, lon: 80.8769, alt: 120 },
+    name: 'Northern Sentinel',
+    callsign: 'SENT-01',
+    position: { lat: 28.6139, lon: 77.2090, alt: 100 },
     waypoints: [
-      { lat: 26.7465, lon: 80.8769, alt: 120, label: 'Start: Mohanlalganj' },
-      { lat: 26.8123, lon: 80.9456, alt: 130, label: 'WP1: Checkpoint Alpha' },
-      { lat: 26.8789, lon: 81.0123, alt: 125, label: 'WP2: Border Zone' },
-      { lat: 26.9234, lon: 81.0789, alt: 135, label: 'End: Forward Base' },
+      { lat: 28.6139, lon: 77.2090, alt: 100, label: 'Base' },
+      { lat: 28.7041, lon: 77.1025, alt: 120, label: 'WP1' },
     ],
     status: 'patrol',
-    battery: 78,
-    speed: 12.5,
+    battery: 85,
+    speed: 12,
     heading: 45,
-    corridor: 'Northern Border',
-    corridorColor: '#3b82f6', // blue
-    mission: 'Border Patrol Alpha'
+    corridor: 'Border Surveillance',
+    corridorColor: '#3b82f6',
+    mission: 'Sector Alpha Patrol',
   },
   {
     id: 'UAV-002',
-    name: 'Western Scout',
-    callsign: 'BRAVO-2',
-    position: { lat: 26.6234, lon: 80.7123, alt: 115 },
+    name: 'Coastal Guardian',
+    callsign: 'CGRD-02',
+    position: { lat: 19.0760, lon: 72.8777, alt: 150 },
     waypoints: [
-      { lat: 26.6234, lon: 80.7123, alt: 115, label: 'Start: Outpost West' },
-      { lat: 26.5678, lon: 80.6456, alt: 125, label: 'WP1: Recon Point' },
-      { lat: 26.4789, lon: 80.5789, alt: 120, label: 'WP2: Valley Pass' },
-      { lat: 26.4123, lon: 80.5123, alt: 110, label: 'End: Base West' },
+      { lat: 19.0760, lon: 72.8777, alt: 150, label: 'Base' },
+      { lat: 18.9220, lon: 72.8347, alt: 150, label: 'WP1' },
     ],
     status: 'active',
     battery: 92,
-    speed: 15.2,
-    heading: 225,
-    corridor: 'Western Border',
-    corridorColor: '#f97316', // orange
-    mission: 'Western Recon Bravo'
-  },
-  {
-    id: 'UAV-003',
-    name: 'Eastern Sentinel',
-    callsign: 'CHARLIE-3',
-    position: { lat: 26.5678, lon: 81.2345, alt: 110 },
-    waypoints: [
-      { lat: 26.5678, lon: 81.2345, alt: 110, label: 'Start: Forward Base' },
-      { lat: 26.6234, lon: 81.3456, alt: 130, label: 'WP1: Surveillance Alpha' },
-      { lat: 26.6789, lon: 81.4012, alt: 125, label: 'WP2: Surveillance Beta' },
-      { lat: 26.5678, lon: 81.2345, alt: 110, label: 'End: Return Base' },
-    ],
-    status: 'patrol',
-    battery: 65,
-    speed: 10.8,
-    heading: 135,
-    corridor: 'Eastern Border',
-    corridorColor: '#22c55e', // green
-    mission: 'Eastern Surveillance Charlie'
-  },
-  {
-    id: 'UAV-004',
-    name: 'Coastal Watcher',
-    callsign: 'DELTA-4',
-    position: { lat: 26.3456, lon: 80.1234, alt: 100 },
-    waypoints: [
-      { lat: 26.3456, lon: 80.1234, alt: 100, label: 'Start: Coastal Station' },
-      { lat: 26.4123, lon: 80.2456, alt: 120, label: 'WP1: Beach Sector 1' },
-      { lat: 26.4789, lon: 80.3678, alt: 115, label: 'WP2: Beach Sector 2' },
-      { lat: 26.5234, lon: 80.4123, alt: 130, label: 'WP3: Harbor Zone' },
-      { lat: 26.3456, lon: 80.1234, alt: 100, label: 'End: Return' },
-    ],
-    status: 'active',
-    battery: 88,
-    speed: 13.5,
-    heading: 90,
-    corridor: 'Southern Coastal',
-    corridorColor: '#a855f7', // purple
-    mission: 'Coastal Monitoring Delta'
+    speed: 15,
+    heading: 180,
+    corridor: 'Coastal Monitoring',
+    corridorColor: '#f97316',
+    mission: 'Mumbai Coast Watch',
   },
 ];
 
 // ============================================================================
-// CORRIDOR POLYGON GENERATOR
+// CORRIDOR POLYGON CALCULATOR
 // ============================================================================
 
-const generateCorridorPolygon = (waypoints: DemoWaypoint[], width: number = 0.02): [number, number][] => {
+const createCorridorPolygon = (waypoints: DemoWaypoint[], corridorWidth: number = 0.005): [number, number][] => {
   if (waypoints.length < 2) return [];
   
+  const halfWidth = corridorWidth / 2;
   const polygon: [number, number][] = [];
-  const halfWidth = width / 2;
   
-  // Create offset points on both sides of the path
   for (let i = 0; i < waypoints.length - 1; i++) {
     const current = waypoints[i];
     const next = waypoints[i + 1];
     
-    // Calculate perpendicular offset
     const dx = next.lon - current.lon;
     const dy = next.lat - current.lat;
     const length = Math.sqrt(dx * dx + dy * dy);
     const offsetX = (-dy / length) * halfWidth;
     const offsetY = (dx / length) * halfWidth;
     
-    // Add points to polygon
     if (i === 0) {
       polygon.push([current.lat + offsetY, current.lon + offsetX]);
     }
     polygon.push([next.lat + offsetY, next.lon + offsetX]);
   }
   
-  // Add points on the other side (reverse order)
   for (let i = waypoints.length - 1; i > 0; i--) {
     const current = waypoints[i];
     const previous = waypoints[i - 1];
@@ -270,21 +264,315 @@ const MapCenterUpdater: React.FC<{ center: [number, number]; zoom: number }> = (
 // MAIN COMPONENT
 // ============================================================================
 
-const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({ selectedMission }) => {
+const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({ 
+  selectedMission,
+  simulationMode = false,
+  simulationActive = false
+}) => {
   const [demoDrones] = useState<DemoDrone[]>(DEMO_DRONES);
   const [selectedDrone, setSelectedDrone] = useState<string | null>(null);
   const [showCorridors, setShowCorridors] = useState<boolean>(true);
   const [showWaypoints, setShowWaypoints] = useState<boolean>(true);
   
-  // Calculate map center based on all drones and mission
+  // Simulation state
+  const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
+  const [flightPath, setFlightPath] = useState<FlightPathPoint[]>([]);
+  const [dronePosition, setDronePosition] = useState<Position | null>(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [missionProgress, setMissionProgress] = useState({ current: 0, total: 0 });
+  
+  // WebSocket ref
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
+  const maxReconnectAttempts = 10;
+  
+  // API Configuration
+  const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8002';
+  const API_BASE = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
+  
+  // ============================================================================
+  // WEBSOCKET TELEMETRY CONNECTION
+  // ============================================================================
+  
+  const connectWebSocket = () => {
+    if (!simulationMode || !simulationActive || !selectedMission) {
+      console.log('Skipping WebSocket connection - conditions not met');
+      return;
+    }
+    
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected');
+      return;
+    }
+    
+    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.log('❌ Max WebSocket reconnection attempts reached');
+      return;
+    }
+    
+    try {
+      console.log(`🔌 Connecting to WebSocket: ${WS_BASE}/ws/telemetry`);
+      const ws = new WebSocket(`${WS_BASE}/ws/telemetry`);
+      
+      ws.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setWsConnected(true);
+        reconnectAttemptsRef.current = 0;
+        
+        // Subscribe to mission if available
+        if (selectedMission?.id) {
+          ws.send(JSON.stringify({
+            action: 'subscribe',
+            mission_id: selectedMission.id
+          }));
+          console.log(`📡 Subscribed to mission: ${selectedMission.id}`);
+        }
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          
+          switch (message.type) {
+            case 'telemetry_update':
+              handleTelemetryUpdate(message.data);
+              break;
+            case 'connection_info':
+              console.log('Connection info:', message);
+              break;
+            case 'error':
+              console.error('WebSocket error:', message.message);
+              break;
+            case 'pong':
+              // Keep-alive response
+              break;
+            default:
+              console.log('Unknown message type:', message);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      ws.onerror = (error) => {
+        console.error('❌ WebSocket error:', error);
+        setWsConnected(false);
+      };
+      
+      ws.onclose = (event) => {
+        console.log(`🔌 WebSocket closed (Code: ${event.code})`);
+        setWsConnected(false);
+        
+        // Auto-reconnect if simulation is still active
+        if (simulationActive && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current += 1;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
+          
+          console.log(`🔄 Reconnecting in ${delay}ms (Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectWebSocket();
+          }, delay);
+        }
+      };
+      
+      wsRef.current = ws;
+      
+      // Setup ping interval
+      const pingInterval = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ action: 'ping' }));
+        }
+      }, 30000);
+      
+      return () => clearInterval(pingInterval);
+      
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
+      setWsConnected(false);
+    }
+  };
+  
+  const disconnectWebSocket = () => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    
+    setWsConnected(false);
+    reconnectAttemptsRef.current = 0;
+  };
+  
+  // ============================================================================
+  // TELEMETRY UPDATE HANDLER
+  // ============================================================================
+  
+  const handleTelemetryUpdate = (data: any) => {
+    try {
+      // Update telemetry state
+      setTelemetry({
+        timestamp: data.timestamp,
+        position: data.position || data.current_position,
+        velocity: data.velocity,
+        attitude: data.attitude,
+        battery: data.battery,
+        gps: data.gps,
+        armed: data.armed,
+        mode: data.mode,
+        mission_current: data.mission_current,
+        mission_count: data.mission_count
+      });
+      
+      // Update drone position
+      if (data.position || data.current_position) {
+        const pos = data.position || data.current_position;
+        setDronePosition({
+          lat: pos.lat || pos.latitude,
+          lon: pos.lon || pos.longitude,
+          alt: pos.alt || pos.altitude
+        });
+        
+        // Add to flight path
+        setFlightPath(prev => {
+          const newPath = [...prev, {
+            lat: pos.lat || pos.latitude,
+            lon: pos.lon || pos.longitude,
+            timestamp: Date.now()
+          }];
+          return newPath.slice(-500); // Keep last 500 points
+        });
+      }
+      
+      // Update mission progress
+      if (data.mission_current !== undefined && data.mission_count !== undefined) {
+        setMissionProgress({
+          current: data.mission_current,
+          total: data.mission_count
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error handling telemetry update:', error);
+    }
+  };
+  
+  // ============================================================================
+  // AUTOMATIC MISSION UPLOAD AND START
+  // ============================================================================
+  
+  const uploadAndStartMission = async () => {
+    if (!simulationMode || !simulationActive || !selectedMission) {
+      return;
+    }
+    
+    try {
+      console.log('📤 Uploading mission to PX4...');
+      
+      // Prepare waypoints
+      const waypoints = selectedMission.waypoints.map((wp, index) => ({
+        lat: wp.lat,
+        lon: wp.lng || wp.lon,
+        alt: wp.alt || 100,
+        sequence: index
+      }));
+      
+      // Upload mission
+      const uploadResponse = await fetch(`${API_BASE}/mission/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ waypoints })
+      });
+      
+      const uploadData = await uploadResponse.json();
+      
+      if (uploadData.success) {
+        console.log('✅ Mission uploaded successfully');
+        
+        // Wait a moment for upload to settle
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Start mission automatically
+        console.log('🚀 Starting mission...');
+        const startResponse = await fetch(`${API_BASE}/mission/start`, {
+          method: 'POST'
+        });
+        
+        const startData = await startResponse.json();
+        
+        if (startData.success) {
+          console.log('✅ Mission started successfully');
+        } else {
+          console.error('Failed to start mission:', startData.message);
+        }
+      } else {
+        console.error('Failed to upload mission:', uploadData.message);
+      }
+      
+    } catch (error) {
+      console.error('Error uploading/starting mission:', error);
+    }
+  };
+  
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+  
+  // Auto-connect WebSocket when simulation becomes active
+  useEffect(() => {
+    if (simulationMode && simulationActive && selectedMission) {
+      console.log('🎮 Simulation activated - initializing...');
+      
+      // Step 1: Upload and start mission
+      uploadAndStartMission();
+      
+      // Step 2: Connect WebSocket after a short delay
+      const connectTimer = setTimeout(() => {
+        connectWebSocket();
+      }, 2000);
+      
+      return () => {
+        clearTimeout(connectTimer);
+        disconnectWebSocket();
+      };
+    } else {
+      // Disconnect when simulation stops
+      disconnectWebSocket();
+      setFlightPath([]);
+      setDronePosition(null);
+      setTelemetry(null);
+    }
+  }, [simulationMode, simulationActive, selectedMission]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disconnectWebSocket();
+    };
+  }, []);
+  
+  // ============================================================================
+  // MAP CENTER CALCULATION
+  // ============================================================================
+  
   const getMapCenter = (): [number, number] => {
+    // If we have a live drone position from simulation, use it
+    if (simulationMode && dronePosition) {
+      return [dronePosition.lat, dronePosition.lon];
+    }
+    
+    // Otherwise use mission waypoints or demo drones
     if (selectedMission?.waypoints?.[0]) {
       const firstWp = selectedMission.waypoints[0];
       const lon = firstWp.lng ?? firstWp.lon;
       return [firstWp.lat, lon];
     }
     
-    // Center on average of all drone positions
     const avgLat = demoDrones.reduce((sum, drone) => sum + drone.position.lat, 0) / demoDrones.length;
     const avgLon = demoDrones.reduce((sum, drone) => sum + drone.position.lon, 0) / demoDrones.length;
     return [avgLat, avgLon];
@@ -293,12 +581,19 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({ selectedMis
   const [mapCenter, setMapCenter] = useState<[number, number]>(getMapCenter());
   const [mapZoom] = useState<number>(selectedMission ? 12 : 11);
 
-  // Update map center when selected mission changes
+  // Update map center when drone position changes
   useEffect(() => {
-    setMapCenter(getMapCenter());
-  }, [selectedMission]);
+    if (simulationMode && dronePosition) {
+      setMapCenter([dronePosition.lat, dronePosition.lon]);
+    } else if (selectedMission) {
+      setMapCenter(getMapCenter());
+    }
+  }, [selectedMission, dronePosition, simulationMode]);
 
-  // Get status color
+  // ============================================================================
+  // HELPER FUNCTIONS
+  // ============================================================================
+  
   const getStatusColor = (status: string): string => {
     const statusColors: Record<string, string> = {
       active: 'text-green-400',
@@ -319,7 +614,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({ selectedMis
     return statusColors[status] || 'bg-gray-600';
   };
 
-  // Format mission waypoints to match demo waypoint format
   const getMissionWaypoints = (): DemoWaypoint[] => {
     if (!selectedMission?.waypoints) return [];
     
@@ -333,478 +627,328 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({ selectedMis
 
   const missionWaypoints = getMissionWaypoints();
   const missionCorridorPolygon = missionWaypoints.length > 1 
-    ? generateCorridorPolygon(missionWaypoints, 0.025) 
+    ? createCorridorPolygon(missionWaypoints, 0.01)
     : [];
 
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
   return (
-    <div className="h-screen w-full bg-slate-950 flex">
-      {/* Left Sidebar - Drone Status */}
-      <div className="w-80 bg-slate-900 border-r border-slate-700 flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-700">
-          <div className="flex items-center space-x-2 mb-2">
-            <Activity className="text-blue-400" size={24} />
-            <h1 className="text-xl font-bold text-white">Situational Awareness</h1>
-          </div>
-          <p className="text-sm text-slate-400">Real-time fleet monitoring</p>
-        </div>
-
-        {/* Controls */}
-        <div className="p-4 border-b border-slate-700 space-y-2">
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showCorridors}
-              onChange={(e) => setShowCorridors(e.target.checked)}
-              className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500"
-            />
-            <span className="text-sm text-slate-300">Show Corridors</span>
-          </label>
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showWaypoints}
-              onChange={(e) => setShowWaypoints(e.target.checked)}
-              className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500"
-            />
-            <span className="text-sm text-slate-300">Show Waypoints</span>
-          </label>
-        </div>
-
-        {/* Selected Mission Info */}
-        {selectedMission && (
-          <div className="p-4 bg-gradient-to-br from-blue-900/30 to-purple-900/30 border-b border-slate-700">
-            <div className="flex items-center space-x-2 mb-2">
-              <MapPin className="text-blue-400" size={16} />
-              <span className="text-xs font-semibold text-blue-300">SELECTED MISSION</span>
-            </div>
-            <h3 className="text-white font-semibold text-sm mb-1">{selectedMission.mission_name}</h3>
-            <div className="flex items-center space-x-2 mb-2">
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                selectedMission.corridor?.color === 'blue' ? 'bg-blue-600' :
-                selectedMission.corridor?.color === 'orange' ? 'bg-orange-600' :
-                selectedMission.corridor?.color === 'green' ? 'bg-green-600' :
-                selectedMission.corridor?.color === 'purple' ? 'bg-purple-600' :
-                selectedMission.corridor?.color === 'yellow' ? 'bg-yellow-600' :
-                'bg-gray-600'
-              }`}>
-                {selectedMission.corridor?.label || 'No Corridor'}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span className="text-slate-400">Type:</span>
-                <span className="text-white ml-1">{selectedMission.mission_type || 'N/A'}</span>
+    <div className="relative h-full w-full">
+      {/* Map Container */}
+      <MapContainer
+        center={mapCenter}
+        zoom={mapZoom}
+        className="h-full w-full"
+        zoomControl={true}
+      >
+        <MapCenterUpdater center={mapCenter} zoom={mapZoom} />
+        
+        {/* Esri Satellite Imagery */}
+        <TileLayer
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
+        />
+        
+        {/* Mission Corridor */}
+        {selectedMission && showCorridors && missionCorridorPolygon.length > 0 && (
+          <Polygon
+            positions={missionCorridorPolygon}
+            pathOptions={{
+              color: selectedMission.corridor?.color || '#3b82f6',
+              fillColor: selectedMission.corridor?.color || '#3b82f6',
+              fillOpacity: 0.2,
+              weight: 2,
+            }}
+          >
+            <Popup>
+              <div className="p-2">
+                <div className="font-semibold text-sm">{selectedMission.corridor?.label || 'Mission Corridor'}</div>
+                <div className="text-xs text-gray-600 mt-1">{selectedMission.corridor?.description || ''}</div>
               </div>
-              <div>
-                <span className="text-slate-400">Distance:</span>
-                <span className="text-white ml-1">{selectedMission.total_distance?.toFixed(1) || 'N/A'} km</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Waypoints:</span>
-                <span className="text-white ml-1">{selectedMission.waypoints?.length || 0}</span>
-              </div>
-              <div>
-                <span className="text-slate-400">Status:</span>
-                <span className="text-white ml-1 capitalize">{selectedMission.status || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
+            </Popup>
+          </Polygon>
         )}
-
-        {/* Demo Drones List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          <div className="flex items-center space-x-2 mb-3">
-            <Plane className="text-slate-400" size={16} />
-            <span className="text-xs font-semibold text-slate-400">ACTIVE DRONES ({demoDrones.length})</span>
-          </div>
-          
-          {demoDrones.map((drone) => (
-            <div
-              key={drone.id}
-              onClick={() => setSelectedDrone(selectedDrone === drone.id ? null : drone.id)}
-              className={`
-                p-3 rounded-lg border cursor-pointer transition-all
-                ${selectedDrone === drone.id 
-                  ? 'bg-slate-800 border-blue-500 shadow-lg shadow-blue-500/20' 
-                  : 'bg-slate-800/50 border-slate-700 hover:border-slate-600'
-                }
-              `}
-            >
-              {/* Drone Header */}
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center space-x-2">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: drone.corridorColor }}
-                  />
-                  <span className="text-white font-semibold text-sm">{drone.name}</span>
+        
+        {/* Mission Waypoints */}
+        {selectedMission && showWaypoints && missionWaypoints.map((waypoint, index) => (
+          <Marker
+            key={`mission-wp-${index}`}
+            position={[waypoint.lat, waypoint.lon]}
+            icon={L.divIcon({
+              className: 'waypoint-marker',
+              html: `
+                <div style="
+                  background: ${selectedMission.corridor?.color || '#3b82f6'};
+                  color: white;
+                  width: 28px;
+                  height: 28px;
+                  border-radius: 50%;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-weight: bold;
+                  font-size: 12px;
+                  border: 2px solid white;
+                  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                ">
+                  ${index + 1}
                 </div>
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusBadgeColor(drone.status)}`}>
-                  {drone.status.toUpperCase()}
-                </span>
+              `,
+              iconSize: [28, 28],
+              iconAnchor: [14, 14],
+            })}
+          >
+            <Tooltip permanent direction="top" offset={[0, -15]}>
+              <div className="text-xs">
+                <strong>{waypoint.label || `WP${index + 1}`}</strong>
+                <br />
+                Alt: {waypoint.alt}m
               </div>
-
-              {/* Callsign and Corridor */}
-              <div className="text-xs text-slate-400 mb-2">
-                <span className="font-mono">{drone.callsign}</span>
-                <span className="mx-2">•</span>
-                <span>{drone.corridor}</span>
-              </div>
-
-              {/* Mission */}
-              <div className="text-xs text-slate-300 mb-2">
-                <span className="text-slate-500">Mission:</span> {drone.mission}
-              </div>
-
-              {/* Stats Grid */}
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div className="bg-slate-900/50 rounded p-1.5">
-                  <Battery className={`${drone.battery > 70 ? 'text-green-400' : drone.battery > 30 ? 'text-yellow-400' : 'text-red-400'} mb-1`} size={14} />
-                  <div className="text-white font-semibold">{drone.battery}%</div>
-                  <div className="text-slate-500 text-[10px]">Battery</div>
+            </Tooltip>
+          </Marker>
+        ))}
+        
+        {/* Mission Flight Path Polyline */}
+        {selectedMission && missionWaypoints.length > 1 && (
+          <Polyline
+            positions={missionWaypoints.map(wp => [wp.lat, wp.lon])}
+            pathOptions={{
+              color: selectedMission.corridor?.color || '#3b82f6',
+              weight: 3,
+              opacity: 0.7,
+              dashArray: '10, 10',
+            }}
+          />
+        )}
+        
+        {/* Simulation Flight Path */}
+        {simulationMode && flightPath.length > 1 && (
+          <Polyline
+            positions={flightPath.map(p => [p.lat, p.lon])}
+            pathOptions={{
+              color: '#10b981',
+              weight: 3,
+              opacity: 0.8,
+            }}
+          />
+        )}
+        
+        {/* Live Drone Position (Simulation) */}
+        {simulationMode && dronePosition && (
+          <Marker
+            position={[dronePosition.lat, dronePosition.lon]}
+            icon={createDroneIcon('#10b981', telemetry?.attitude?.yaw || 0)}
+          >
+            <Popup>
+              <div className="p-2 min-w-[200px]">
+                <div className="font-semibold text-sm mb-2">
+                  {selectedMission?.mission_name || 'Live Drone'}
                 </div>
-                <div className="bg-slate-900/50 rounded p-1.5">
-                  <Navigation className="text-blue-400 mb-1" size={14} />
-                  <div className="text-white font-semibold">{drone.speed} m/s</div>
-                  <div className="text-slate-500 text-[10px]">Speed</div>
-                </div>
-                <div className="bg-slate-900/50 rounded p-1.5">
-                  <Circle className="text-purple-400 mb-1" size={14} />
-                  <div className="text-white font-semibold">{drone.position.alt}m</div>
-                  <div className="text-slate-500 text-[10px]">Altitude</div>
-                </div>
-              </div>
-
-              {/* Position */}
-              {selectedDrone === drone.id && (
-                <div className="mt-2 pt-2 border-t border-slate-700 text-xs">
-                  <div className="text-slate-400">Position:</div>
-                  <div className="text-white font-mono">
-                    {drone.position.lat.toFixed(4)}°N, {drone.position.lon.toFixed(4)}°E
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Status:</span>
+                    <span className="font-semibold">{telemetry?.mode || 'UNKNOWN'}</span>
                   </div>
-                  <div className="text-slate-400 mt-1">Heading: {drone.heading}°</div>
-                  <div className="text-slate-400">Waypoints: {drone.waypoints.length}</div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Alt:</span>
+                    <span>{dronePosition.alt.toFixed(1)}m</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Battery:</span>
+                    <span>{telemetry?.battery?.remaining?.toFixed(0) || 0}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Waypoint:</span>
+                    <span>{missionProgress.current} / {missionProgress.total}</span>
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Main Map Area */}
-      <div className="flex-1 relative">
-        <MapContainer
-          center={mapCenter}
-          zoom={mapZoom}
-          style={{ height: '100%', width: '100%' }}
-          zoomControl={true}
-        >
-          <MapCenterUpdater center={mapCenter} zoom={mapZoom} />
-          
-          {/* Satellite Base Layer */}
-          <TileLayer
-            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-            attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
-            maxZoom={19}
-          />
-          
-          {/* Labels Overlay */}
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-            maxZoom={19}
-          />
-
-          {/* Render Demo Drones */}
-          {demoDrones.map((drone) => (
-            <React.Fragment key={drone.id}>
-              {/* Corridor Polygon */}
-              {showCorridors && drone.waypoints.length > 1 && (
-                <Polygon
-                  positions={generateCorridorPolygon(drone.waypoints)}
-                  pathOptions={{
-                    color: drone.corridorColor,
-                    fillColor: drone.corridorColor,
-                    fillOpacity: 0.15,
-                    weight: 2,
-                    opacity: 0.6,
-                  }}
-                />
-              )}
-
-              {/* Flight Path */}
+              </div>
+            </Popup>
+            <Tooltip permanent direction="top" offset={[0, -20]}>
+              <div className="text-xs">
+                <strong>LIVE</strong>
+                <br />
+                {telemetry?.battery?.remaining?.toFixed(0) || 0}% • {dronePosition.alt.toFixed(0)}m
+              </div>
+            </Tooltip>
+          </Marker>
+        )}
+        
+        {/* Demo Drones (when not in simulation mode) */}
+        {!simulationMode && demoDrones.map((drone) => (
+          <React.Fragment key={drone.id}>
+            {/* Drone Marker */}
+            <Marker
+              position={[drone.position.lat, drone.position.lon]}
+              icon={createDroneIcon(drone.corridorColor, drone.heading)}
+              eventHandlers={{
+                click: () => setSelectedDrone(selectedDrone === drone.id ? null : drone.id),
+              }}
+            >
+              <Popup>
+                <div className="p-2 min-w-[200px]">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <div className="font-semibold text-sm">{drone.name}</div>
+                      <div className="text-xs text-gray-600">{drone.callsign}</div>
+                    </div>
+                    <span className={`px-2 py-1 text-xs rounded ${getStatusBadgeColor(drone.status)}`}>
+                      {drone.status.toUpperCase()}
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-1 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Mission:</span>
+                      <span className="font-semibold">{drone.mission}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Corridor:</span>
+                      <span>{drone.corridor}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Altitude:</span>
+                      <span>{drone.position.alt}m AGL</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Speed:</span>
+                      <span>{drone.speed} m/s</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Battery:</span>
+                      <span className={drone.battery > 30 ? 'text-green-600' : 'text-red-600'}>
+                        {drone.battery}%
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Heading:</span>
+                      <span>{drone.heading}°</span>
+                    </div>
+                  </div>
+                </div>
+              </Popup>
+              
+              <Tooltip permanent direction="top" offset={[0, -20]}>
+                <div className="text-xs">
+                  <strong>{drone.callsign}</strong>
+                  <br />
+                  {drone.battery}% • {drone.position.alt}m
+                </div>
+              </Tooltip>
+            </Marker>
+            
+            {/* Drone Path */}
+            {drone.waypoints.length > 1 && (
               <Polyline
                 positions={drone.waypoints.map(wp => [wp.lat, wp.lon])}
                 pathOptions={{
                   color: drone.corridorColor,
-                  weight: 3,
-                  opacity: 0.8,
-                  dashArray: '10, 5',
+                  weight: 2,
+                  opacity: 0.5,
+                  dashArray: '5, 5',
                 }}
               />
-
-              {/* Waypoints */}
-              {showWaypoints && drone.waypoints.map((wp, idx) => (
-                <Marker
-                  key={`${drone.id}-wp-${idx}`}
-                  position={[wp.lat, wp.lon]}
-                  icon={L.divIcon({
-                    className: 'waypoint-marker',
-                    html: `
-                      <div style="
-                        width: 20px;
-                        height: 20px;
-                        background-color: ${drone.corridorColor};
-                        border: 2px solid white;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 10px;
-                        color: white;
-                        font-weight: bold;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                      ">
-                        ${idx + 1}
-                      </div>
-                    `,
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10],
-                  })}
-                >
-                  <Tooltip direction="top" offset={[0, -10]} opacity={0.9}>
-                    <div className="text-xs">
-                      <div className="font-semibold">{wp.label || `WP${idx + 1}`}</div>
-                      <div className="text-slate-600">{wp.alt}m AGL</div>
-                    </div>
-                  </Tooltip>
-                </Marker>
-              ))}
-
-              {/* Drone Position */}
-              <Marker
-                position={[drone.position.lat, drone.position.lon]}
-                icon={createDroneIcon(drone.corridorColor, drone.heading)}
-              >
-                <Popup>
-                  <div className="text-sm p-2">
-                    <div className="font-bold text-base mb-1">{drone.name}</div>
-                    <div className="text-xs space-y-1">
-                      <div><strong>Callsign:</strong> {drone.callsign}</div>
-                      <div><strong>Status:</strong> {drone.status}</div>
-                      <div><strong>Mission:</strong> {drone.mission}</div>
-                      <div><strong>Corridor:</strong> {drone.corridor}</div>
-                      <div><strong>Battery:</strong> {drone.battery}%</div>
-                      <div><strong>Speed:</strong> {drone.speed} m/s</div>
-                      <div><strong>Altitude:</strong> {drone.position.alt}m</div>
-                      <div><strong>Heading:</strong> {drone.heading}°</div>
-                      <div><strong>Position:</strong> {drone.position.lat.toFixed(4)}°N, {drone.position.lon.toFixed(4)}°E</div>
-                    </div>
-                  </div>
-                </Popup>
-              </Marker>
-            </React.Fragment>
-          ))}
-
-          {/* Render Selected Mission */}
-          {selectedMission && missionWaypoints.length > 0 && (
-            <React.Fragment>
-              {/* Mission Corridor Polygon */}
-              {showCorridors && missionCorridorPolygon.length > 0 && (
-                <Polygon
-                  positions={missionCorridorPolygon}
-                  pathOptions={{
-                    color: selectedMission.corridor?.color === 'blue' ? '#3b82f6' :
-                           selectedMission.corridor?.color === 'orange' ? '#f97316' :
-                           selectedMission.corridor?.color === 'green' ? '#22c55e' :
-                           selectedMission.corridor?.color === 'purple' ? '#a855f7' :
-                           selectedMission.corridor?.color === 'yellow' ? '#eab308' :
-                           '#3b82f6',
-                    fillColor: selectedMission.corridor?.color === 'blue' ? '#3b82f6' :
-                              selectedMission.corridor?.color === 'orange' ? '#f97316' :
-                              selectedMission.corridor?.color === 'green' ? '#22c55e' :
-                              selectedMission.corridor?.color === 'purple' ? '#a855f7' :
-                              selectedMission.corridor?.color === 'yellow' ? '#eab308' :
-                              '#3b82f6',
-                    fillOpacity: 0.25,
-                    weight: 3,
-                    opacity: 0.8,
-                  }}
-                />
-              )}
-
-              {/* Mission Flight Path */}
-              <Polyline
-                positions={missionWaypoints.map(wp => [wp.lat, wp.lon])}
-                pathOptions={{
-                  color: selectedMission.corridor?.color === 'blue' ? '#3b82f6' :
-                         selectedMission.corridor?.color === 'orange' ? '#f97316' :
-                         selectedMission.corridor?.color === 'green' ? '#22c55e' :
-                         selectedMission.corridor?.color === 'purple' ? '#a855f7' :
-                         selectedMission.corridor?.color === 'yellow' ? '#eab308' :
-                         '#3b82f6',
-                  weight: 4,
-                  opacity: 1,
-                }}
-              />
-
-              {/* Mission Waypoints */}
-              {showWaypoints && missionWaypoints.map((wp, idx) => (
-                <Marker
-                  key={`mission-wp-${idx}`}
-                  position={[wp.lat, wp.lon]}
-                  icon={L.divIcon({
-                    className: 'mission-waypoint-marker',
-                    html: `
-                      <div style="
-                        width: 24px;
-                        height: 24px;
-                        background-color: ${
-                          selectedMission.corridor?.color === 'blue' ? '#3b82f6' :
-                          selectedMission.corridor?.color === 'orange' ? '#f97316' :
-                          selectedMission.corridor?.color === 'green' ? '#22c55e' :
-                          selectedMission.corridor?.color === 'purple' ? '#a855f7' :
-                          selectedMission.corridor?.color === 'yellow' ? '#eab308' :
-                          '#3b82f6'
-                        };
-                        border: 3px solid white;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 11px;
-                        color: white;
-                        font-weight: bold;
-                        box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-                      ">
-                        ${idx + 1}
-                      </div>
-                    `,
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12],
-                  })}
-                >
-                  <Tooltip direction="top" offset={[0, -12]} opacity={0.95}>
-                    <div className="text-xs">
-                      <div className="font-semibold text-blue-600">{wp.label || `Waypoint ${idx + 1}`}</div>
-                      <div className="text-slate-600">{wp.alt || 100}m AGL</div>
-                    </div>
-                  </Tooltip>
-                </Marker>
-              ))}
-
-              {/* Mission Start Marker (larger) */}
-              {missionWaypoints.length > 0 && (
-                <Marker
-                  position={[missionWaypoints[0].lat, missionWaypoints[0].lon]}
-                  icon={L.divIcon({
-                    className: 'mission-start-marker',
-                    html: `
-                      <div style="
-                        width: 32px;
-                        height: 32px;
-                        background-color: #22c55e;
-                        border: 3px solid white;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 16px;
-                        color: white;
-                        font-weight: bold;
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-                      ">
-                        S
-                      </div>
-                    `,
-                    iconSize: [32, 32],
-                    iconAnchor: [16, 16],
-                  })}
-                >
-                  <Tooltip permanent direction="top" offset={[0, -16]} className="font-semibold">
-                    START
-                  </Tooltip>
-                </Marker>
-              )}
-
-              {/* Mission End Marker (larger) */}
-              {missionWaypoints.length > 1 && (
-                <Marker
-                  position={[
-                    missionWaypoints[missionWaypoints.length - 1].lat,
-                    missionWaypoints[missionWaypoints.length - 1].lon
-                  ]}
-                  icon={L.divIcon({
-                    className: 'mission-end-marker',
-                    html: `
-                      <div style="
-                        width: 32px;
-                        height: 32px;
-                        background-color: #ef4444;
-                        border: 3px solid white;
-                        border-radius: 50%;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 16px;
-                        color: white;
-                        font-weight: bold;
-                        box-shadow: 0 4px 8px rgba(0,0,0,0.5);
-                      ">
-                        E
-                      </div>
-                    `,
-                    iconSize: [32, 32],
-                    iconAnchor: [16, 16],
-                  })}
-                >
-                  <Tooltip permanent direction="top" offset={[0, -16]} className="font-semibold">
-                    END
-                  </Tooltip>
-                </Marker>
-              )}
-            </React.Fragment>
-          )}
-        </MapContainer>
-
-        {/* Map Legend */}
-        <div className="absolute bottom-4 right-4 bg-slate-900/95 backdrop-blur border border-slate-700 rounded-lg p-3 shadow-xl">
-          <div className="text-xs font-semibold text-white mb-2">LEGEND</div>
-          <div className="space-y-1.5 text-xs">
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-white" />
-              <span className="text-slate-300">Northern Border</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 rounded-full bg-orange-500 border-2 border-white" />
-              <span className="text-slate-300">Western Border</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
-              <span className="text-slate-300">Eastern Border</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-4 h-4 rounded-full bg-purple-500 border-2 border-white" />
-              <span className="text-slate-300">Southern Coastal</span>
-            </div>
-            {selectedMission && (
-              <>
-                <div className="border-t border-slate-700 my-2" />
-                <div className="flex items-center space-x-2">
-                  <div className={`w-4 h-4 rounded-full border-2 border-white ${
-                    selectedMission.corridor?.color === 'blue' ? 'bg-blue-500' :
-                    selectedMission.corridor?.color === 'orange' ? 'bg-orange-500' :
-                    selectedMission.corridor?.color === 'green' ? 'bg-green-500' :
-                    selectedMission.corridor?.color === 'purple' ? 'bg-purple-500' :
-                    selectedMission.corridor?.color === 'yellow' ? 'bg-yellow-500' :
-                    'bg-blue-500'
-                  }`} />
-                  <span className="text-yellow-300 font-semibold">Selected Mission</span>
-                </div>
-              </>
             )}
+            
+            {/* Drone Corridor */}
+            {showCorridors && drone.waypoints.length > 1 && (
+              <Polygon
+                positions={createCorridorPolygon(drone.waypoints)}
+                pathOptions={{
+                  color: drone.corridorColor,
+                  fillColor: drone.corridorColor,
+                  fillOpacity: 0.1,
+                  weight: 1,
+                  opacity: 0.3,
+                }}
+              />
+            )}
+          </React.Fragment>
+        ))}
+      </MapContainer>
+      
+      {/* Control Panel */}
+      <div className="absolute bottom-4 left-4 z-[1000] bg-slate-900/95 backdrop-blur border border-slate-700 rounded-lg p-4 space-y-3 min-w-[280px]">
+        <div className="flex items-center justify-between">
+          <h3 className="text-white font-semibold text-sm">Map Controls</h3>
+          {simulationMode && wsConnected && (
+            <div className="flex items-center space-x-1">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-xs text-green-400">Live</span>
+            </div>
+          )}
+        </div>
+        
+        <div className="space-y-2">
+          <label className="flex items-center space-x-2 text-sm text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showCorridors}
+              onChange={(e) => setShowCorridors(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-600"
+            />
+            <span>Show Corridors</span>
+          </label>
+          
+          <label className="flex items-center space-x-2 text-sm text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showWaypoints}
+              onChange={(e) => setShowWaypoints(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-600"
+            />
+            <span>Show Waypoints</span>
+          </label>
+        </div>
+        
+        {/* Simulation Status */}
+        {simulationMode && (
+          <div className="pt-3 border-t border-slate-700 space-y-2">
+            <div className="text-xs text-slate-400">
+              <div className="flex justify-between mb-1">
+                <span>WebSocket:</span>
+                <span className={wsConnected ? 'text-green-400' : 'text-red-400'}>
+                  {wsConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              {telemetry && (
+                <>
+                  <div className="flex justify-between mb-1">
+                    <span>Mode:</span>
+                    <span className="text-white">{telemetry.mode || 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between mb-1">
+                    <span>Waypoint:</span>
+                    <span className="text-white">
+                      {missionProgress.current} / {missionProgress.total}
+                    </span>
+                  </div>
+                  <div className="flex justify-between mb-1">
+                    <span>Battery:</span>
+                    <span className={
+                      (telemetry.battery?.remaining || 0) > 30 
+                        ? 'text-green-400' 
+                        : 'text-red-400'
+                    }>
+                      {telemetry.battery?.remaining?.toFixed(0) || 0}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>GPS Sats:</span>
+                    <span className="text-white">
+                      {telemetry.gps?.satellites || 0}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
+        )}
+        
+        <div className="text-xs text-slate-500 pt-2 border-t border-slate-700">
+          {simulationMode ? 'Simulation Mode Active' : `${demoDrones.length} Demo Drones Active`}
         </div>
       </div>
     </div>
