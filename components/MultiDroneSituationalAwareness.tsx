@@ -438,16 +438,46 @@ const DEMO_DRONES: DemoDrone[] = [
 ];
 
 // ============================================================================
-// CORRIDOR POLYGON CALCULATOR
+// STRAIGHT CORRIDOR POLYGON CALCULATOR (NO BLENDING)
 // ============================================================================
 
-const createCorridorPolygon = (waypoints: DemoWaypoint[], corridorWidth: number = 0.005): [number, number][] => {
+const createCorridorPolygon = (waypoints: DemoWaypoint[], corridorWidth: number = 0.015): [number, number][] => {
   if (waypoints.length < 2) return [];
   
   const halfWidth = corridorWidth / 2;
-  const polygon: [number, number][] = [];
+  const allPoints: [number, number][] = [];
   
+  // Create rectangular corridor segments for each waypoint pair
   for (let i = 0; i < waypoints.length - 1; i++) {
+    const current = waypoints[i];
+    const next = waypoints[i + 1];
+    
+    // Calculate perpendicular offset for this segment
+    const dx = next.lon - current.lon;
+    const dy = next.lat - current.lat;
+    const length = Math.sqrt(dx * dx + dy * dy);
+    const offsetX = (-dy / length) * halfWidth;
+    const offsetY = (dx / length) * halfWidth;
+    
+    // Create 4 corners of the rectangle for this segment
+    const p1: [number, number] = [current.lat + offsetY, current.lon + offsetX];    // Start left
+    const p2: [number, number] = [next.lat + offsetY, next.lon + offsetX];          // End left
+    const p3: [number, number] = [next.lat - offsetY, next.lon - offsetX];          // End right
+    const p4: [number, number] = [current.lat - offsetY, current.lon - offsetX];    // Start right
+    
+    // Add this segment's polygon (as a separate shape)
+    if (i > 0) {
+      // For segments after the first, add a small gap or just start fresh
+      allPoints.push(p1);
+    } else {
+      allPoints.push(p1);
+    }
+    
+    allPoints.push(p2);
+  }
+  
+  // Complete the polygon by adding the right side points in reverse
+  for (let i = waypoints.length - 2; i >= 0; i--) {
     const current = waypoints[i];
     const next = waypoints[i + 1];
     
@@ -457,29 +487,16 @@ const createCorridorPolygon = (waypoints: DemoWaypoint[], corridorWidth: number 
     const offsetX = (-dy / length) * halfWidth;
     const offsetY = (dx / length) * halfWidth;
     
+    const p3: [number, number] = [next.lat - offsetY, next.lon - offsetX];
+    const p4: [number, number] = [current.lat - offsetY, current.lon - offsetX];
+    
+    allPoints.push(p3);
     if (i === 0) {
-      polygon.push([current.lat + offsetY, current.lon + offsetX]);
-    }
-    polygon.push([next.lat + offsetY, next.lon + offsetX]);
-  }
-  
-  for (let i = waypoints.length - 1; i > 0; i--) {
-    const current = waypoints[i];
-    const previous = waypoints[i - 1];
-    
-    const dx = previous.lon - current.lon;
-    const dy = previous.lat - current.lat;
-    const length = Math.sqrt(dx * dx + dy * dy);
-    const offsetX = (-dy / length) * halfWidth;
-    const offsetY = (dx / length) * halfWidth;
-    
-    polygon.push([current.lat + offsetY, current.lon + offsetX]);
-    if (i === 1) {
-      polygon.push([previous.lat + offsetY, previous.lon + offsetX]);
+      allPoints.push(p4);
     }
   }
   
-  return polygon;
+  return allPoints;
 };
 
 // ============================================================================
@@ -1058,8 +1075,7 @@ const MultiDroneAwareness: React.FC = () => {
       const waypoints = selectedMission.waypoints.map((wp, index) => ({
         lat: wp.lat,
         lon: wp.lng || wp.lon,
-        alt: wp.alt || 100,
-        sequence: index
+        alt: wp.alt || 100
       }));
       
       const uploadResponse = await fetch(`${API_BASE}/mission/upload`, {
@@ -1451,24 +1467,42 @@ const MultiDroneAwareness: React.FC = () => {
           );
         })}
         
-        {/* SELECTED MISSION CORRIDOR */}
-        {selectedMission && showCorridors && missionCorridorPolygon.length > 0 && (
-          <Polygon
-            positions={missionCorridorPolygon}
-            pathOptions={{
-              color: getCorridorColor(),
-              fillColor: getCorridorColor(),
-              fillOpacity: 0.3,
-              weight: 3,
-            }}
-          >
-            <Popup>
-              <div className="p-2">
-                <div className="font-semibold text-sm">{selectedMission.corridor_label || 'Mission Corridor'}</div>
-                <div className="text-xs text-gray-600 mt-1">{selectedMission.corridor_value || ''}</div>
-              </div>
-            </Popup>
-          </Polygon>
+        {/* SELECTED MISSION CORRIDOR - STRAIGHT SEGMENTS */}
+        {selectedMission && showCorridors && missionWaypoints.length > 1 && (
+          <>
+            {missionWaypoints.slice(0, -1).map((wp, index) => {
+              const nextWp = missionWaypoints[index + 1];
+              const halfWidth = 0.007; // Corridor half-width in degrees
+              
+              // Calculate perpendicular offset
+              const dx = nextWp.lon - wp.lon;
+              const dy = nextWp.lat - wp.lat;
+              const length = Math.sqrt(dx * dx + dy * dy);
+              const offsetX = (-dy / length) * halfWidth;
+              const offsetY = (dx / length) * halfWidth;
+              
+              // Create rectangle for this segment
+              const segmentPolygon: [number, number][] = [
+                [wp.lat + offsetY, wp.lon + offsetX],      // Start left
+                [nextWp.lat + offsetY, nextWp.lon + offsetX],  // End left
+                [nextWp.lat - offsetY, nextWp.lon - offsetX],  // End right
+                [wp.lat - offsetY, wp.lon - offsetX],      // Start right
+              ];
+              
+              return (
+                <Polygon
+                  key={`corridor-segment-${index}`}
+                  positions={segmentPolygon}
+                  pathOptions={{
+                    color: getCorridorColor(),
+                    fillColor: getCorridorColor(),
+                    fillOpacity: 0.3,
+                    weight: 2,
+                  }}
+                />
+              );
+            })}
+          </>
         )}
         
         {/* SELECTED MISSION WAYPOINTS */}
@@ -1658,12 +1692,8 @@ const MultiDroneAwareness: React.FC = () => {
             </Popup>
             <Tooltip permanent direction="top" offset={[0, -32]}>
               <div className="text-xs font-bold bg-white px-3 py-2 rounded-lg shadow-xl border-2 border-green-500">
-                <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                  <strong className="text-green-600">🚁 LIVE</strong>
-                </div>
                 <div className="text-gray-700 mt-1">
-                  {telemetry?.battery?.remaining?.toFixed(0) || 0}% • {dronePosition.alt.toFixed(0)}m • {getGroundSpeed().toFixed(1)} m/s
+                 Alt: {dronePosition.alt.toFixed(0)}m
                 </div>
               </div>
             </Tooltip>
@@ -1809,18 +1839,18 @@ const MultiDroneAwareness: React.FC = () => {
                   onClick={handleStopSimulation}
                   className="w-full flex items-center justify-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-3 rounded-lg transition-colors font-medium"
                 >
-                  <AlertTriangle size={18} />
-                  <span>Stop Simulation</span>
+                  {/* <AlertTriangle size={18} />
+                  <span>Stop Simulation</span> */}
                 </button>
               )}
               
-              <button
+              {/* <button
                 onClick={handleClearMission}
                 className="w-full flex items-center justify-center space-x-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition-colors text-sm"
               >
                 <X size={16} />
                 <span>Clear Mission</span>
-              </button>
+              </button> */}
             </div>
             
             {/* Live Telemetry */}
@@ -1840,59 +1870,6 @@ const MultiDroneAwareness: React.FC = () => {
                     </div>
                   )}
                 </div>
-                
-                {telemetry && (
-                  <div className="space-y-2 text-xs">
-                    <div className="flex items-center justify-between bg-slate-800 p-2 rounded">
-                      <span className="text-slate-400">Flight Mode:</span>
-                      <span className="text-white font-medium">{telemetry.mode || 'N/A'}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between bg-slate-800 p-2 rounded">
-                      <span className="text-slate-400">Altitude:</span>
-                      <span className="text-white font-medium">
-                        {dronePosition?.alt.toFixed(1) || 'N/A'}m
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between bg-slate-800 p-2 rounded">
-                      <span className="text-slate-400">Battery:</span>
-                      <span className={
-                        (telemetry.battery?.remaining || 0) > 30 
-                          ? 'text-green-400 font-medium' 
-                          : 'text-red-400 font-medium'
-                      }>
-                        {telemetry.battery?.remaining?.toFixed(0) || 0}%
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between bg-slate-800 p-2 rounded">
-                      <span className="text-slate-400">GPS Satellites:</span>
-                      <span className="text-white font-medium">
-                        {telemetry.gps?.satellites || 0}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between bg-slate-800 p-2 rounded">
-                      <span className="text-slate-400">Waypoint Progress:</span>
-                      <span className="text-white font-medium">
-                        {missionProgress.current} / {missionProgress.total}
-                      </span>
-                    </div>
-                    
-                    {telemetry.velocity && (
-                      <div className="flex items-center justify-between bg-slate-800 p-2 rounded">
-                        <span className="text-slate-400">Ground Speed:</span>
-                        <span className="text-white font-medium">
-                          {Math.sqrt(
-                            Math.pow(telemetry.velocity.vx, 2) + 
-                            Math.pow(telemetry.velocity.vy, 2)
-                          ).toFixed(1)} m/s
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>
