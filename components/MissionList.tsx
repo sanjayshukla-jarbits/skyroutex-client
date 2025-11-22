@@ -576,7 +576,7 @@ export default function MissionListComponent({
                               title="View in Multi-Drone Awareness"
                             >
                               <Map size={16} />
-                              <span className="text-sm font-medium">Multi-Drone</span>
+                              {/* <span className="text-sm font-medium">Multi-Drone</span> */}
                             </button>
 
                             {/* 🔵 SIMULATE: Simulate in legacy flight monitor */}

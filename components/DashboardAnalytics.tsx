@@ -95,8 +95,8 @@ export default function DashboardAnalytics() {
       { id: 'M-2024-047', name: 'Inspection Route C', status: 'Pending', time: '1h ago' },
       { id: 'M-2024-048', name: 'Emergency Response', status: 'In Flight', time: '15m ago' },
     ],
-    activeVehicles: 12,
-    todayFlights: 24,
+    activeVehicles: 5,
+    todayFlights: 12,
     successRate: 98.5
   }
 

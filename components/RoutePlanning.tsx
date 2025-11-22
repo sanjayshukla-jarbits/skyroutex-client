@@ -56,11 +56,43 @@ export default function RoutePlanning({
 }: RoutePlanningProps) {
   // Corridor options
   const corridorOptions: CorridorOption[] = [
-    { value: 'northern', label: 'Northern Border Corridor', color: 'blue', description: 'India-Nepal border surveillance' },
-    { value: 'western', label: 'Western Border Corridor', color: 'orange', description: 'India-Pakistan border region' },
-    { value: 'eastern', label: 'Eastern Border Corridor', color: 'green', description: 'India-Bangladesh/Myanmar border' },
-    { value: 'southern', label: 'Southern Coastal Corridor', color: 'purple', description: 'Coastal surveillance and monitoring' },
-    { value: 'central', label: 'Central Regional Corridor', color: 'yellow', description: 'Domestic operations zone' },
+  // Primary Lucknow Corridors
+  { 
+    value: 'mlg-kni', 
+    label: 'MLG - KNI Corridor', 
+    color: '#438535ff', 
+    description: 'MLG - KNI Corridor'
+  },
+  { 
+    value: 'lucknow-kanpur', 
+    label: 'Lucknow - Kanpur Corridor', 
+    color: '#3b82f6', 
+    description: 'LKO-KNU highway corridor'
+  },
+  { 
+    value: 'lucknow-varanasi', 
+    label: 'Lucknow - Varanasi Corridor', 
+    color: '#f59e0b', 
+    description: 'LKO-VNS eastern route'
+  },
+  { 
+    value: 'lucknow-agra', 
+    label: 'Lucknow - Agra Corridor', 
+    color: '#ec4899', 
+    description: 'LKO-AGR southwest corridor'
+  },
+  { 
+    value: 'lucknow-bareilly', 
+    label: 'Lucknow - Bareilly Corridor', 
+    color: '#8b5cf6', 
+    description: 'LKO-BEY northern corridor'
+  },
+  { 
+    value: 'lucknow-prayagraj', 
+    label: 'Lucknow - Prayagraj Corridor', 
+    color: '#22c55e', 
+    description: 'LKO-IXD southeast route'
+  },
   ]
 
   // Corridor state

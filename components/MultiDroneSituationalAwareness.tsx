@@ -1645,7 +1645,6 @@ const MultiDroneAwareness: React.FC = () => {
             <Popup>
               <div className="p-3 min-w-[240px]">
                 <div className="font-semibold text-sm mb-2 flex items-center space-x-2">
-                  <span>🚁</span>
                   <span>{selectedMission?.mission_name || 'Live Helicopter'}</span>
                 </div>
                 <div className="space-y-2 text-xs">
@@ -1918,10 +1917,9 @@ const MultiDroneAwareness: React.FC = () => {
                 />
                 <div>
                   <div className="text-slate-300 font-medium flex items-center space-x-1">
-                    <span>🚁</span>
                     <span>{selectedMission.mission_name}</span>
                   </div>
-                  <div className="text-slate-500 text-[10px]">Helicopter</div>
+                  <div className="text-slate-500 text-[10px]">{selectedMission.corridor_label}</div>
                 </div>
               </div>
               <span className={simulationActive ? "text-green-400" : showDummyMissionDrone && isAnimating ? "text-blue-400" : "text-yellow-400"}>
@@ -1939,7 +1937,7 @@ const MultiDroneAwareness: React.FC = () => {
                   style={{ backgroundColor: drone.corridorColor }}
                 />
                 <div>
-                  <div className="text-slate-300 font-medium">{drone.callsign}</div>
+                  <div className="text-slate-300 font-medium">{drone.name}</div>
                   <div className="text-slate-500 text-[10px] capitalize">{drone.type}</div>
                 </div>
               </div>

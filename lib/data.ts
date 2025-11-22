@@ -79,7 +79,7 @@ export const missionTypes: MissionType[] = [
   { name: 'Logistics', description: 'Cargo & delivery operations', active: 8, lastUsed: '5h ago', icon: Package, color: 'bg-orange-800' },
   { name: 'Agriculture', description: 'Crop monitoring & spraying', active: 5, lastUsed: '1d ago', icon: Sprout, color: 'bg-green-600' },
   { name: 'Emergency', description: 'Search & rescue operations', active: 3, lastUsed: '2d ago', icon: AlertTriangle, color: 'bg-red-700' },
-  { name: 'Inspection', description: 'Infrastructure assessment', active: 6, lastUsed: '3d ago', icon: Eye, color: 'bg-purple-600' },
+  { name: 'Regional', description: 'Infrastructure assessment', active: 6, lastUsed: '3d ago', icon: Eye, color: 'bg-purple-600' },
   { name: 'Mapping', description: 'Aerial surveying & 3D modeling', active: 7, lastUsed: '1h ago', icon: MapIcon, color: 'bg-blue-600' },
   { name: 'Delivery', description: 'Point-to-point transport', active: 15, lastUsed: '30min ago', icon: Truck, color: 'bg-black' },
   { name: 'Monitoring', description: 'Environmental tracking', active: 9, lastUsed: '4h ago', icon: Activity, color: 'bg-orange-800' }
