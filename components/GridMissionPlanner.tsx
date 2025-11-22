@@ -7,8 +7,9 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
+import { useMapEvents } from 'react-leaflet';
 import toast from 'react-hot-toast';
-import { MapPin, Grid3x3, AlertTriangle, Upload, Save, Trash2, Eye, EyeOff } from 'lucide-react';
+import { MapPin, Grid, AlertTriangle, Upload, Save, Trash2, Eye, EyeOff } from 'lucide-react';
 import {
   GridMissionConfig,
   ObstacleZone,
@@ -33,7 +34,10 @@ import {
 // Dynamically import map components to avoid SSR issues
 const MapContainer = dynamic(
   () => import('react-leaflet').then((mod) => mod.MapContainer),
-  { ssr: false }
+  { 
+    ssr: false,
+    loading: () => <div className="flex items-center justify-center h-full bg-slate-900 text-white">Loading map...</div>
+  }
 );
 const TileLayer = dynamic(
   () => import('react-leaflet').then((mod) => mod.TileLayer),
@@ -288,6 +292,19 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
   };
 
   // ========================================
+  // Map Click Handler Component
+  // ========================================
+  
+  const MapClickHandler = () => {
+    const map = useMapEvents({
+      click: (e: any) => {
+        handleMapClick(e);
+      },
+    });
+    return null;
+  };
+
+  // ========================================
   // Render
   // ========================================
 
@@ -452,7 +469,7 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
               <div className="space-y-4">
                 <div className="bg-slate-700 p-4 rounded-lg space-y-4">
                   <h3 className="text-white font-medium mb-3 flex items-center">
-                    <Grid3x3 className="w-4 h-4 mr-2" />
+                    <Grid className="w-4 h-4 mr-2" />
                     Grid Parameters
                   </h3>
 
@@ -616,8 +633,8 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
           center={initialCenter}
           zoom={13}
           className="h-full w-full"
-          onClick={handleMapClick}
         >
+          <MapClickHandler />
           <TileLayer
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             attribution='&copy; <a href="https://www.esri.com/">Esri</a>'
