@@ -12,8 +12,8 @@ import {
 } from '../types/gridMission';
 
 // API Configuration
-const MISSION_DB_API = process.env.NEXT_PUBLIC_MISSION_DB_URL || 'http://localhost:7000';
-const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
+const MISSION_DB_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ============================================================================
 // Database Operations (Port 7000 - Mission Database API)
@@ -24,7 +24,15 @@ const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8
  */
 export async function saveGridMissionToDatabase(params: {
   missionName: string;
-  waypoints: Array<{...}>;
+  waypoints: Array<{
+    id: string;
+    label: string;
+    coords: string;
+    alt: string;
+    color: string;
+    lat: number;
+    lon: number;
+  }>;
   stats: { totalDistance: number; flightTime: number; batteryUsage: number };
   coverageArea: number;
   gridSpacing: number;
@@ -49,8 +57,7 @@ export async function saveGridMissionToDatabase(params: {
       created_by: 'grid_planner',
       notes: `Grid survey with ${params.waypoints.length} waypoints, ${params.gridSpacing}m spacing, coverage ${params.coverageArea.toFixed(2)} km²`,
       vehicle_id: 'UAV-GRID-001',
-      operator_id: 'operator-001',
-      status: 'draft'
+      operator_id: 'operator-001'
     };
 
     console.log('💾 Saving mission to database:', payload);

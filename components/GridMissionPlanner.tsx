@@ -53,13 +53,14 @@ const Popup = dynamic(
   () => import('react-leaflet').then((mod) => mod.Popup),
   { ssr: false }
 );
+import fixLeafletIcons, { startIcon, endIcon, blueWaypointIcon, droneIcon } from '@/utils/leafletIconFix';
 
 // ============================================================================
 // API Configuration
 // ============================================================================
 
-const MISSION_DB_API = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
-const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
+const MISSION_DB_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ============================================================================
 // Component Props
@@ -131,6 +132,13 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
     cameraAngle,
     obstacles,
   }), [missionName, surveyArea, altitude, gridSpacing, overlap, gridAngle, cameraAngle, obstacles]);
+
+  // ========================================
+  // Fix Leaflet Icons on Mount - ADD THIS
+  // ========================================
+  useEffect(() => {
+    fixLeafletIcons();
+  }, []);
 
   // ========================================
   // Map Interaction Handlers
@@ -274,9 +282,7 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
         alt: `${altitude}m AGL`,
         color: 'bg-blue-500',
         lat: wp.position.lat,
-        lon: wp.position.lon,
-        altitude: altitude,
-        sequence: index
+        lon: wp.position.lon
       }));
 
       // Prepare mission payload
@@ -298,8 +304,7 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
         created_by: 'grid_planner',
         notes: `Grid survey mission with ${generatedMission.stats.validWaypoints} waypoints`,
         vehicle_id: 'UAV-GRID-001',
-        operator_id: 'operator-001',
-        status: 'draft'
+        operator_id: 'operator-001'
       };
 
       // POST to Mission Database API
