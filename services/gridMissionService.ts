@@ -24,22 +24,8 @@ const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8
  */
 export async function saveGridMissionToDatabase(params: {
   missionName: string;
-  waypoints: Array<{
-    id: string;
-    label: string;
-    coords: string;
-    alt: string;
-    color: string;
-    lat: number;
-    lon: number;
-    altitude: number;
-    sequence: number;
-  }>;
-  stats: {
-    totalDistance: number;
-    flightTime: number;
-    batteryUsage: number;
-  };
+  waypoints: Array<{...}>;
+  stats: { totalDistance: number; flightTime: number; batteryUsage: number };
   coverageArea: number;
   gridSpacing: number;
   altitude: number;

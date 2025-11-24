@@ -247,7 +247,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   const maxReconnectAttempts = 5;
   
   const API_BASE = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
-  const MISSION_API_BASE = process.env.NEXT_PUBLIC_MISSION_API_URL || 'http://localhost:8000';
+  const MISSION_API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
   const WS_BASE = process.env.NEXT_PUBLIC_DRONE_WS_URL || 'ws://localhost:7000';
   
   // ============================================================================

@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 // API Configuration
 const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
-const MISSION_DB_API = process.env.NEXT_PUBLIC_MISSION_DB_URL || 'http://localhost:7000';
+const MISSION_DB_API = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
 
 // ============================================================================
 // Types
@@ -389,6 +389,17 @@ const GridMissionControlPanel: React.FC<GridMissionControlPanelProps> = ({
     } catch (error) {
       console.error('❌ Error stopping mission:', error);
       toast.error('Failed to stop mission');
+    }
+  };
+
+  // Update mission status in database
+  const updateMissionStatus = async (status: string) => {
+    if (missionId) {
+      await fetch(`${MISSION_DB_API}/api/missions/${missionId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
     }
   };
 

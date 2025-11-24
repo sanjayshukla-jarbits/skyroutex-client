@@ -58,7 +58,7 @@ const Popup = dynamic(
 // API Configuration
 // ============================================================================
 
-const MISSION_DB_API = process.env.NEXT_PUBLIC_MISSION_DB_URL || 'http://localhost:7000';
+const MISSION_DB_API = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
 const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ============================================================================
@@ -279,7 +279,7 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
         sequence: index
       }));
 
-      // Prepare mission payload for database
+      // Prepare mission payload
       const missionPayload = {
         mission_name: missionName,
         mission_type: 'Grid Survey',
@@ -296,42 +296,31 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
         },
         waypoints: waypoints,
         created_by: 'grid_planner',
-        notes: `Grid survey mission with ${generatedMission.stats.validWaypoints} waypoints covering ${generatedMission.stats.coverageArea.toFixed(2)} km²`,
+        notes: `Grid survey mission with ${generatedMission.stats.validWaypoints} waypoints`,
         vehicle_id: 'UAV-GRID-001',
         operator_id: 'operator-001',
         status: 'draft'
       };
 
-      console.log('💾 Saving mission to database:', missionPayload);
-
-      // Save to Mission Database API (port 7000)
+      // POST to Mission Database API
       const response = await fetch(`${MISSION_DB_API}/api/missions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(missionPayload),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to save mission to database');
+        throw new Error(errorData.detail || 'Failed to save mission');
       }
 
       const savedMission = await response.json();
-      console.log('✅ Mission saved to database:', savedMission);
-
       setSavedMissionId(savedMission.id.toString());
-      toast.success(`✅ Mission saved to database (ID: ${savedMission.id})`);
-
-      if (onSave) {
-        onSave(generatedMission);
-      }
-
+      toast.success(`✅ Mission saved (ID: ${savedMission.id})`);
+      
       return savedMission.id;
     } catch (error) {
-      console.error('❌ Error saving mission:', error);
-      toast.error(`Failed to save mission: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to save: ${error.message}`);
       return null;
     } finally {
       setIsSaving(false);
