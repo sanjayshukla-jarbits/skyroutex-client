@@ -1,6 +1,6 @@
 /**
- * Grid Mission API Service
- * Handles all API calls for grid mission creation and management
+ * Enhanced Grid Mission Service
+ * Handles database persistence and drone control API integration
  */
 
 import {
@@ -11,20 +11,365 @@ import {
   ObstacleZone,
 } from '../types/gridMission';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7000';
+// API Configuration
+const MISSION_DB_API = process.env.NEXT_PUBLIC_MISSION_DB_URL || 'http://localhost:7000';
+const DRONE_CONTROL_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 // ============================================================================
-// Grid Mission API
+// Database Operations (Port 7000 - Mission Database API)
 // ============================================================================
 
 /**
- * Create a survey/grid mission on the backend
+ * Save grid mission to database with full mission details
+ */
+export async function saveGridMissionToDatabase(params: {
+  missionName: string;
+  waypoints: Array<{
+    id: string;
+    label: string;
+    coords: string;
+    alt: string;
+    color: string;
+    lat: number;
+    lon: number;
+    altitude: number;
+    sequence: number;
+  }>;
+  stats: {
+    totalDistance: number;
+    flightTime: number;
+    batteryUsage: number;
+  };
+  coverageArea: number;
+  gridSpacing: number;
+  altitude: number;
+}): Promise<{ success: boolean; missionId?: number; error?: string }> {
+  try {
+    const payload = {
+      mission_name: params.missionName,
+      mission_type: 'Grid Survey',
+      corridor: {
+        value: 'survey',
+        label: 'Survey Mission',
+        color: '#3b82f6',
+        description: 'Grid-based area survey mission'
+      },
+      mission_stats: {
+        total_distance: params.stats.totalDistance,
+        flight_time: params.stats.flightTime,
+        battery_usage: params.stats.batteryUsage
+      },
+      waypoints: params.waypoints,
+      created_by: 'grid_planner',
+      notes: `Grid survey with ${params.waypoints.length} waypoints, ${params.gridSpacing}m spacing, coverage ${params.coverageArea.toFixed(2)} km²`,
+      vehicle_id: 'UAV-GRID-001',
+      operator_id: 'operator-001',
+      status: 'draft'
+    };
+
+    console.log('💾 Saving mission to database:', payload);
+
+    const response = await fetch(`${MISSION_DB_API}/api/missions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to save mission');
+    }
+
+    const savedMission = await response.json();
+    console.log('✅ Mission saved to database:', savedMission);
+
+    return {
+      success: true,
+      missionId: savedMission.id
+    };
+  } catch (error) {
+    console.error('❌ Error saving mission to database:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Update mission status in database
+ */
+export async function updateMissionStatus(
+  missionId: number,
+  status: 'draft' | 'active' | 'completed' | 'paused' | 'cancelled'
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch(`${MISSION_DB_API}/api/missions/${missionId}/status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ status }),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to update mission status');
+    }
+
+    const result = await response.json();
+    console.log('✅ Mission status updated:', result);
+
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error updating mission status:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Get mission from database
+ */
+export async function getMissionFromDatabase(missionId: number): Promise<any> {
+  try {
+    const response = await fetch(`${MISSION_DB_API}/api/missions/${missionId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get mission from database');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('❌ Error getting mission from database:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// Drone Control API Operations (Port 8000 - Gazebo/PX4 Control)
+// ============================================================================
+
+/**
+ * Create survey mission on drone control API
+ */
+export async function createSurveyMissionOnDrone(
+  request: CreateGridMissionRequest
+): Promise<{ success: boolean; missionId?: string; error?: string }> {
+  try {
+    console.log('🚀 Creating survey mission on drone control API:', request);
+
+    const response = await fetch(`${DRONE_CONTROL_API}/mission/survey`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to create survey mission');
+    }
+
+    const result = await response.json();
+    console.log('✅ Survey mission created on drone:', result);
+
+    return {
+      success: true,
+      missionId: result.data.mission_id
+    };
+  } catch (error) {
+    console.error('❌ Error creating survey mission:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Upload mission template to PX4
+ */
+export async function uploadMissionToPX4(missionId: string): Promise<{
+  success: boolean;
+  message: string;
+  data?: any;
+}> {
+  try {
+    console.log('📤 Uploading mission to PX4:', missionId);
+
+    const response = await fetch(
+      `${DRONE_CONTROL_API}/mission/upload_template/${missionId}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to upload mission');
+    }
+
+    const result = await response.json();
+    console.log('✅ Mission uploaded to PX4:', result);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error uploading mission to PX4:', error);
+    throw error;
+  }
+}
+
+/**
+ * Start mission execution
+ */
+export async function startMissionExecution(): Promise<{
+  success: boolean;
+  message: string;
+  data?: any;
+}> {
+  try {
+    console.log('▶️ Starting mission execution...');
+
+    const response = await fetch(`${DRONE_CONTROL_API}/mission/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to start mission');
+    }
+
+    const result = await response.json();
+    console.log('✅ Mission started:', result);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error starting mission:', error);
+    throw error;
+  }
+}
+
+/**
+ * Pause mission execution
+ */
+export async function pauseMissionExecution(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  try {
+    console.log('⏸️ Pausing mission...');
+
+    const response = await fetch(`${DRONE_CONTROL_API}/mission/pause`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to pause mission');
+    }
+
+    const result = await response.json();
+    console.log('✅ Mission paused:', result);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error pausing mission:', error);
+    throw error;
+  }
+}
+
+/**
+ * Resume mission execution
+ */
+export async function resumeMissionExecution(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  try {
+    console.log('▶️ Resuming mission...');
+
+    const response = await fetch(`${DRONE_CONTROL_API}/mission/resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to resume mission');
+    }
+
+    const result = await response.json();
+    console.log('✅ Mission resumed:', result);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error resuming mission:', error);
+    throw error;
+  }
+}
+
+/**
+ * Stop mission execution
+ */
+export async function stopMissionExecution(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  try {
+    console.log('⏹️ Stopping mission...');
+
+    const response = await fetch(`${DRONE_CONTROL_API}/mission/stop`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to stop mission');
+    }
+
+    const result = await response.json();
+    console.log('✅ Mission stopped:', result);
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error stopping mission:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// Legacy Grid Mission API (keeping for compatibility)
+// ============================================================================
+
+/**
+ * Create a survey/grid mission on the backend (legacy method)
  */
 export async function createGridMission(
   request: CreateGridMissionRequest
 ): Promise<GridMissionResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/mission/survey`, {
+    const response = await fetch(`${DRONE_CONTROL_API}/mission/survey`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -57,7 +402,7 @@ export async function validateGridMission(waypoints: Array<{
   data?: any;
 }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/mission/validate`, {
+    const response = await fetch(`${DRONE_CONTROL_API}/mission/validate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -95,7 +440,7 @@ export async function validateGridMission(waypoints: Array<{
 }
 
 /**
- * Upload grid mission to drone
+ * Upload grid mission to drone (legacy method)
  */
 export async function uploadGridMission(missionId: string): Promise<{
   success: boolean;
@@ -104,7 +449,7 @@ export async function uploadGridMission(missionId: string): Promise<{
 }> {
   try {
     const response = await fetch(
-      `${API_BASE_URL}/mission/upload_template/${missionId}`,
+      `${DRONE_CONTROL_API}/mission/upload_template/${missionId}`,
       {
         method: 'POST',
         headers: {
@@ -125,6 +470,50 @@ export async function uploadGridMission(missionId: string): Promise<{
   }
 }
 
+// ============================================================================
+// Geofence & Obstacle Management
+// ============================================================================
+
+/**
+ * Sync obstacles to backend as geofences
+ */
+export async function syncObstaclesToBackend(
+  obstacles: ObstacleZone[]
+): Promise<void> {
+  try {
+    console.log('🔄 Syncing obstacles to backend:', obstacles);
+
+    for (const obstacle of obstacles) {
+      if (!obstacle.enabled) continue;
+
+      const geofenceRequest: GeofenceCreateRequest = {
+        name: obstacle.name,
+        type: 'exclusion',
+        vertices: obstacle.vertices.map(v => [v.lat, v.lng]),
+        min_altitude: obstacle.minAltitude,
+        max_altitude: obstacle.maxAltitude,
+      };
+
+      const response = await fetch(`${DRONE_CONTROL_API}/geofence`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(geofenceRequest),
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to sync obstacle ${obstacle.name}`);
+      } else {
+        console.log(`✅ Synced obstacle ${obstacle.name}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error syncing obstacles:', error);
+    throw error;
+  }
+}
+
 /**
  * Get mission template details
  */
@@ -135,7 +524,7 @@ export async function getMissionTemplate(missionId: string): Promise<{
 }> {
   try {
     const response = await fetch(
-      `${API_BASE_URL}/mission/template/${missionId}`,
+      `${DRONE_CONTROL_API}/mission/template/${missionId}`,
       {
         method: 'GET',
         headers: {
@@ -162,23 +551,18 @@ export async function getMissionTemplate(missionId: string): Promise<{
 export async function listMissionTemplates(): Promise<{
   success: boolean;
   message: string;
-  data?: {
-    templates: Array<{
-      id: string;
-      name: string;
-      type: string;
-      waypoint_count: number;
-      created_at: string;
-    }>;
-  };
+  data?: any[];
 }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/mission/templates`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    const response = await fetch(
+      `${DRONE_CONTROL_API}/mission/templates`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
     if (!response.ok) {
       const error = await response.json();
@@ -193,102 +577,15 @@ export async function listMissionTemplates(): Promise<{
 }
 
 // ============================================================================
-// Geofence/Obstacle API
+// Telemetry & Status
 // ============================================================================
 
 /**
- * Create polygon geofence/obstacle
+ * Get current drone status
  */
-export async function createPolygonGeofence(
-  request: GeofenceCreateRequest
-): Promise<GeofenceResponse> {
+export async function getDroneStatus(): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/geofence/polygon`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to create polygon geofence');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error creating polygon geofence:', error);
-    throw error;
-  }
-}
-
-/**
- * Create circular geofence/obstacle
- */
-export async function createCircleGeofence(
-  request: GeofenceCreateRequest
-): Promise<GeofenceResponse> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/geofence/circle`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to create circle geofence');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error creating circle geofence:', error);
-    throw error;
-  }
-}
-
-/**
- * Create cylindrical geofence/obstacle
- */
-export async function createCylinderGeofence(
-  request: GeofenceCreateRequest
-): Promise<GeofenceResponse> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/geofence/cylinder`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to create cylinder geofence');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error creating cylinder geofence:', error);
-    throw error;
-  }
-}
-
-/**
- * List all geofences
- */
-export async function listGeofences(): Promise<{
-  success: boolean;
-  message: string;
-  data?: {
-    geofences: Array<any>;
-  };
-}> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/geofence/list`, {
+    const response = await fetch(`${DRONE_CONTROL_API}/status`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -296,190 +593,35 @@ export async function listGeofences(): Promise<{
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to list geofences');
+      throw new Error('Failed to get drone status');
     }
 
     return await response.json();
   } catch (error) {
-    console.error('Error listing geofences:', error);
+    console.error('Error getting drone status:', error);
     throw error;
   }
 }
 
 /**
- * Delete geofence
+ * Get current telemetry
  */
-export async function deleteGeofence(fenceId: number): Promise<{
-  success: boolean;
-  message: string;
-}> {
+export async function getTelemetry(): Promise<any> {
   try {
-    const response = await fetch(`${API_BASE_URL}/geofence/${fenceId}`, {
-      method: 'DELETE',
+    const response = await fetch(`${DRONE_CONTROL_API}/telemetry`, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to delete geofence');
+      throw new Error('Failed to get telemetry');
     }
 
     return await response.json();
   } catch (error) {
-    console.error('Error deleting geofence:', error);
+    console.error('Error getting telemetry:', error);
     throw error;
-  }
-}
-
-/**
- * Enable/disable geofence
- */
-export async function toggleGeofence(
-  fenceId: number,
-  enabled: boolean
-): Promise<{
-  success: boolean;
-  message: string;
-}> {
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/geofence/${fenceId}/enable?enabled=${enabled}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to toggle geofence');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error toggling geofence:', error);
-    throw error;
-  }
-}
-
-/**
- * Check if position violates any geofence
- */
-export async function checkGeofenceViolation(
-  lat: number,
-  lon: number,
-  alt: number
-): Promise<{
-  success: boolean;
-  message: string;
-  data?: {
-    violated: boolean;
-  };
-}> {
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/geofence/check?lat=${lat}&lon=${lon}&alt=${alt}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to check geofence');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error checking geofence:', error);
-    throw error;
-  }
-}
-
-/**
- * Clear all geofences
- */
-export async function clearAllGeofences(): Promise<{
-  success: boolean;
-  message: string;
-}> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/geofence/clear`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to clear geofences');
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error('Error clearing geofences:', error);
-    throw error;
-  }
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Convert obstacles to geofence creation requests
- */
-export async function syncObstaclesToBackend(
-  obstacles: ObstacleZone[]
-): Promise<void> {
-  // Clear existing geofences first
-  await clearAllGeofences();
-
-  // Create new geofences for each obstacle
-  for (const obstacle of obstacles) {
-    if (!obstacle.enabled) continue;
-
-    const baseRequest: GeofenceCreateRequest = {
-      name: obstacle.name,
-      fence_type: 'exclusion',
-      shape: obstacle.type,
-      enabled: true,
-      min_altitude: obstacle.minAltitude,
-      max_altitude: obstacle.maxAltitude,
-    };
-
-    try {
-      if (obstacle.type === 'polygon' && obstacle.vertices) {
-        await createPolygonGeofence({
-          ...baseRequest,
-          vertices: obstacle.vertices.map(v => [v.lat, v.lng]),
-        });
-      } else if (obstacle.type === 'circle' && obstacle.center && obstacle.radius) {
-        await createCircleGeofence({
-          ...baseRequest,
-          center_lat: obstacle.center.lat,
-          center_lon: obstacle.center.lng,
-          radius: obstacle.radius,
-        });
-      } else if (obstacle.type === 'cylinder' && obstacle.center && obstacle.radius) {
-        await createCylinderGeofence({
-          ...baseRequest,
-          center_lat: obstacle.center.lat,
-          center_lon: obstacle.center.lng,
-          radius: obstacle.radius,
-        });
-      }
-    } catch (error) {
-      console.error(`Failed to sync obstacle ${obstacle.name}:`, error);
-    }
   }
 }

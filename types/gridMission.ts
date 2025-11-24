@@ -1,15 +1,49 @@
 /**
- * Grid Mission Planning Types
- * TypeScript interfaces for planned grid missions with obstacles
+ * Grid Mission Types and Interfaces
+ * Complete type definitions for grid mission planning
  */
 
 // ============================================================================
-// Grid Mission Types
+// Basic Types
 // ============================================================================
+
+export interface LatLngPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface Position {
+  lat: number;
+  lon: number;
+  alt: number;
+}
+
+// ============================================================================
+// Grid Mission Configuration
+// ============================================================================
+
+export interface SurveyArea {
+  vertices: LatLngPoint[];
+  name: string;
+  color: string;
+}
+
+export interface ObstacleZone {
+  id: string;
+  name: string;
+  type: 'polygon' | 'circle';
+  enabled: boolean;
+  vertices: LatLngPoint[];
+  center?: LatLngPoint;
+  radius?: number;
+  color: string;
+  minAltitude: number;
+  maxAltitude: number;
+}
 
 export interface GridMissionConfig {
   name: string;
-  surveyArea: PolygonArea;
+  surveyArea: SurveyArea;
   altitude: number;
   gridSpacing: number;
   overlap: number;
@@ -18,50 +52,43 @@ export interface GridMissionConfig {
   obstacles: ObstacleZone[];
 }
 
-export interface PolygonArea {
-  vertices: LatLngPoint[];
-  name?: string;
-  color?: string;
-}
-
-export interface LatLngPoint {
-  lat: number;
-  lng: number;
-}
-
-export interface ObstacleZone {
-  id: string;
-  name: string;
-  type: 'polygon' | 'circle' | 'cylinder';
-  enabled: boolean;
-  color?: string;
-  // For polygon obstacles
-  vertices?: LatLngPoint[];
-  // For circular/cylindrical obstacles
-  center?: LatLngPoint;
-  radius?: number; // in meters
-  // Altitude constraints
-  minAltitude?: number;
-  maxAltitude?: number;
-}
+// ============================================================================
+// Waypoints
+// ============================================================================
 
 export interface GridWaypoint {
-  lat: number;
-  lng: number;
-  altitude: number;
   sequence: number;
-  isValid: boolean; // false if inside obstacle
-  gridLineIndex?: number;
-  pointType: 'turn' | 'straight' | 'boundary';
+  position: Position;
+  lineIndex: number;
+  isValid: boolean;
+  isBlocked?: boolean;
+  blockingObstacle?: string;
 }
 
 export interface GridLine {
-  startPoint: LatLngPoint;
-  endPoint: LatLngPoint;
-  waypoints: GridWaypoint[];
   lineIndex: number;
+  waypoints: GridWaypoint[];
   direction: 'forward' | 'backward';
 }
+
+// ============================================================================
+// Mission Statistics
+// ============================================================================
+
+export interface GridMissionStats {
+  totalWaypoints: number;
+  validWaypoints: number;
+  obstacleWaypoints: number;
+  totalDistance: number;
+  estimatedFlightTime: number;
+  estimatedBatteryUsage: number;
+  gridLines: number;
+  coverageArea: number;
+}
+
+// ============================================================================
+// Complete Mission Plan
+// ============================================================================
 
 export interface GridMissionPlan {
   id: string;
@@ -74,61 +101,34 @@ export interface GridMissionPlan {
   createdAt: string;
 }
 
-export interface GridMissionStats {
-  totalWaypoints: number;
-  validWaypoints: number;
-  obstacleWaypoints: number;
-  totalDistance: number;
-  estimatedFlightTime: number;
-  estimatedBatteryUsage: number;
-  gridLines: number;
-  coverageArea: number; // in square meters
-}
-
 // ============================================================================
 // API Request/Response Types
 // ============================================================================
 
 export interface CreateGridMissionRequest {
   name: string;
-  polygon: [number, number][]; // [lat, lng] tuples
+  polygon: [number, number][];
   altitude: number;
   grid_spacing: number;
   overlap: number;
   grid_angle?: number;
   camera_angle?: number;
-  obstacles?: ObstacleZone[];
 }
 
 export interface GridMissionResponse {
   success: boolean;
   message: string;
-  data: {
+  data?: {
     mission_id: string;
     waypoint_count: number;
-    waypoints: Array<{
-      lat: number;
-      lon: number;
-      alt: number;
-      sequence?: number;
-    }>;
-    grid_lines?: number;
-    coverage_area?: number;
+    waypoints?: any[];
   };
 }
 
 export interface GeofenceCreateRequest {
   name: string;
-  fence_type: 'inclusion' | 'exclusion';
-  shape: 'polygon' | 'circle' | 'cylinder';
-  enabled: boolean;
-  // For polygon
-  vertices?: [number, number][]; // [lat, lng]
-  // For circle/cylinder
-  center_lat?: number;
-  center_lon?: number;
-  radius?: number; // meters
-  // Altitude constraints
+  type: 'inclusion' | 'exclusion';
+  vertices: [number, number][];
   min_altitude?: number;
   max_altitude?: number;
 }
@@ -136,41 +136,123 @@ export interface GeofenceCreateRequest {
 export interface GeofenceResponse {
   success: boolean;
   message: string;
-  data: {
-    id: number;
+  data?: {
+    geofence_id: string;
   };
 }
 
 // ============================================================================
-// Visualization Types
+// Database Mission Types
 // ============================================================================
 
-export interface GridVisualization {
-  surveyAreaPolygon: LatLngPoint[];
-  gridLines: Array<{
-    start: LatLngPoint;
-    end: LatLngPoint;
-    color: string;
-  }>;
-  waypoints: Array<{
-    position: LatLngPoint;
-    sequence: number;
-    valid: boolean;
-    color: string;
-  }>;
-  obstacles: Array<{
-    id: string;
-    shape: 'polygon' | 'circle';
-    vertices?: LatLngPoint[];
-    center?: LatLngPoint;
-    radius?: number;
-    color: string;
-  }>;
+export interface MissionWaypoint {
+  id: string;
+  label: string;
+  coords: string;
+  alt: string;
+  color: string;
+  lat: number;
+  lon: number;
+  altitude: number;
+  sequence: number;
+}
+
+export interface MissionStats {
+  total_distance: number;
+  flight_time: number;
+  battery_usage: number;
+}
+
+export interface MissionCorridor {
+  value: string;
+  label: string;
+  color: string;
+  description: string;
+}
+
+export interface DatabaseMission {
+  mission_name: string;
+  mission_type: string;
+  corridor: MissionCorridor;
+  mission_stats: MissionStats;
+  waypoints: MissionWaypoint[];
+  created_by: string;
+  notes: string;
+  vehicle_id: string;
+  operator_id: string;
+  status: 'draft' | 'active' | 'paused' | 'completed' | 'cancelled';
+}
+
+// ============================================================================
+// Telemetry Types
+// ============================================================================
+
+export interface TelemetryData {
+  position?: {
+    lat: number;
+    lon: number;
+    alt: number;
+  };
+  velocity?: {
+    vx: number;
+    vy: number;
+    vz: number;
+  };
+  attitude?: {
+    roll: number;
+    pitch: number;
+    yaw: number;
+  };
+  battery?: {
+    voltage: number;
+    current: number;
+    remaining: number;
+  };
+  gps?: {
+    fix_type: number;
+    satellites_visible: number;
+    hdop: number;
+  };
+  flight_mode?: string;
+}
+
+export interface DroneStatus {
+  connected: boolean;
+  armed: boolean;
+  flying: boolean;
+  current_position: {
+    lat: number;
+    lon: number;
+    alt: number;
+  };
+  battery_level: number;
+  flight_mode: string;
+  mission_active: boolean;
+  mission_current: number;
+  mission_count: number;
+}
+
+// ============================================================================
+// WebSocket Message Types
+// ============================================================================
+
+export interface WebSocketMessage {
+  type: 'telemetry_update' | 'status_update' | 'mission_complete' | 'error' | 'connection_info' | 'pong';
+  timestamp?: string;
+  data?: any;
+  message?: string;
+}
+
+export interface WebSocketSubscribeMessage {
+  action: 'subscribe' | 'unsubscribe';
+  mission_id?: string;
 }
 
 // ============================================================================
 // Utility Types
 // ============================================================================
+
+export type MissionStatus = 'draft' | 'active' | 'paused' | 'completed' | 'cancelled';
 
 export interface BoundingBox {
   minLat: number;
@@ -179,9 +261,11 @@ export interface BoundingBox {
   maxLng: number;
 }
 
-export interface GridParameters {
-  spacing: number; // meters
-  angle: number; // degrees from north
-  overlap: number; // percentage (0-1)
-  altitude: number; // meters
+export interface GridGenerationOptions {
+  surveyArea: LatLngPoint[];
+  altitude: number;
+  gridSpacing: number;
+  overlap: number;
+  gridAngle: number;
+  obstacles: ObstacleZone[];
 }
