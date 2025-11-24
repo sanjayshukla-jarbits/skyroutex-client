@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useMapEvents } from 'react-leaflet';
-import toast from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import { MapPin, Grid, AlertTriangle, Upload, Save, Trash2, Eye, EyeOff, Play, Square } from 'lucide-react';
 import {
   GridMissionConfig,
@@ -460,6 +460,31 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
 
   return (
     <div className="flex h-screen bg-slate-900 text-white">
+      {/* Add Toaster here */}
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#1e293b',
+            color: '#fff',
+            border: '1px solid #334155',
+          },
+          success: {
+            iconTheme: {
+              primary: '#22c55e',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
+      
       {/* Left Sidebar - Controls */}
       <div className="w-96 bg-slate-800 border-r border-slate-700 overflow-y-auto">
         <div className="p-6">
@@ -719,14 +744,14 @@ const GridMissionPlanner: React.FC<GridMissionPlannerProps> = ({
                 {isSaving ? 'Saving...' : savedMissionId ? 'Mission Saved ✓' : 'Save Mission'}
               </button>
 
-              <button
+              {/* <button
                 onClick={uploadAndStartMission}
                 disabled={isStarting}
                 className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-md font-medium"
               >
                 <Play className="inline mr-2" size={16} />
                 {isStarting ? 'Starting...' : 'Upload & Start Mission'}
-              </button>
+              </button> */}
 
               <div className="flex items-center gap-2">
                 <input
