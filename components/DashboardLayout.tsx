@@ -7,8 +7,29 @@ import MissionListComponent from './MissionList'
 import RoutePlanning from './RoutePlanning'
 import { ApiMission } from '@/services/missionService'
 import DashboardAnalytics from './DashboardAnalytics'
-import SituationalAwareness from './SituationalAwareness';
-import DroneFlightVisualization from './DroneFlightVisualization';
+const SituationalAwareness = dynamic(
+  () => import('./SituationalAwareness'),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="h-full w-full bg-slate-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
+);
+
+const DroneFlightVisualization = dynamic(
+  () => import('./DroneFlightVisualization'),
+  { 
+    ssr: false,
+    loading: () => (
+      <div className="h-full w-full bg-slate-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
+);
 
 const MissionTypes = dynamic(() => import('./MissionTypes'), { ssr: false })
 // const DroneFlightVisualization = dynamic(() => import('./DroneFlightVisualization'), { ssr: false })

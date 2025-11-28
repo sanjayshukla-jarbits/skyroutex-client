@@ -18,9 +18,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { 
   ArrowLeft, 
   Wifi,
@@ -37,14 +34,6 @@ import {
 } from 'lucide-react';
 import TelemetryDisplay from '@/components/TelemetryDisplay';
 import { createDroneIcon, getDroneStatus } from '@/components/droneIconUtils';
-
-// Fix Leaflet default icon issue
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -197,41 +186,6 @@ const isValidCoordinate = (lat: number | undefined, lon: number | undefined): bo
 };
 
 // ============================================================================
-// MAP CONTROLLER COMPONENT
-// ============================================================================
-
-interface MapControllerProps {
-  center: [number, number];
-  zoom: number;
-  followDrone: boolean;
-  onZoomChange?: (zoom: number) => void;
-}
-
-const MapController: React.FC<MapControllerProps> = ({ center, zoom, followDrone, onZoomChange }) => {
-  const map = useMap();
-  
-  useEffect(() => {
-    if (followDrone && center[0] !== 0 && center[1] !== 0) {
-      map.setView(center, zoom, { animate: true, duration: 0.5 });
-    }
-  }, [center, zoom, followDrone, map]);
-
-  useEffect(() => {
-    const handleZoomEnd = () => {
-      if (onZoomChange) {
-        onZoomChange(map.getZoom());
-      }
-    };
-    map.on('zoomend', handleZoomEnd);
-    return () => {
-      map.off('zoomend', handleZoomEnd);
-    };
-  }, [map, onZoomChange]);
-  
-  return null;
-};
-
-// ============================================================================
 // MAP ZOOM CONTROLS COMPONENT
 // ============================================================================
 
@@ -377,6 +331,11 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   onBack 
 }) => {
   // ============================================================================
+  // CLIENT-SIDE CHECK STATE
+  // ============================================================================
+  const [isClient, setIsClient] = useState(false);
+
+  // ============================================================================
   // STATE
   // ============================================================================
   
@@ -402,7 +361,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
 
   // Map zoom and follow state
   const [followDrone, setFollowDrone] = useState<boolean>(true);
-  const mapRef = useRef<L.Map | null>(null);
+  const mapRef = useRef<any>(null);
   
   // Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -429,6 +388,14 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   
   const [mapCenter, setMapCenter] = useState<[number, number]>(getDefaultPosition());
   const [mapZoom, setMapZoom] = useState(selectedMission ? 15 : 18);
+
+  // ============================================================================
+  // CLIENT-SIDE CHECK EFFECT
+  // ============================================================================
+  
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // ============================================================================
   // ZOOM CONTROL HANDLERS
@@ -469,7 +436,10 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   }, [dronePosition, mapZoom]);
 
   const handleFitMission = useCallback(() => {
+    if (!isClient) return;
+    
     if (mapRef.current && selectedMission?.waypoints?.length) {
+      const L = require('leaflet');
       const validWaypoints = selectedMission.waypoints.filter(wp => {
         const lng = getWaypointLongitude(wp);
         return isValidCoordinate(wp.lat, lng);
@@ -488,7 +458,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         setFollowDrone(false);
       }
     }
-  }, [selectedMission, dronePosition]);
+  }, [selectedMission, dronePosition, isClient]);
 
   const handleToggleFollow = useCallback(() => {
     setFollowDrone(prev => !prev);
@@ -608,7 +578,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   }, [followDrone]);
 
   // ============================================================================
-  // KAFKA WEBSOCKET CONNECTION
+  // WEBSOCKET CONNECTION
   // ============================================================================
 
   const connectWebSocket = useCallback(() => {
@@ -821,6 +791,8 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   // ============================================================================
 
   useEffect(() => {
+    if (!isClient) return;
+    
     if (useKafka) {
       connectKafkaWebSocket();
     } else {
@@ -833,7 +805,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         clearInterval(updateTimerRef.current);
       }
     };
-  }, []);
+  }, [isClient]);
 
   useEffect(() => {
     updateTimerRef.current = setInterval(() => {
@@ -862,12 +834,10 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     }
   }, [isConnected]);
 
-  // ============================================================================
-  // RENDER
-  // ============================================================================
-
   // Add pulse animation style
   useEffect(() => {
+    if (!isClient) return;
+    
     const style = document.createElement('style');
     style.textContent = `
       @keyframes pulse {
@@ -879,7 +849,68 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     return () => {
       document.head.removeChild(style);
     };
-  }, []);
+  }, [isClient]);
+
+  // ============================================================================
+  // LOADING STATE (Server-side)
+  // ============================================================================
+
+  if (!isClient) {
+    return (
+      <div className="h-screen w-full bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-slate-400">Loading flight visualization...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // CLIENT-SIDE RENDER WITH DYNAMIC IMPORTS
+  // ============================================================================
+
+  // Dynamic imports for Leaflet (only on client)
+  const L = require('leaflet');
+  const { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } = require('react-leaflet');
+
+  // Fix Leaflet default icon issue
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  });
+
+  // Map Controller Component (defined inside to use the dynamically imported useMap)
+  const MapController: React.FC<{ center: [number, number]; zoom: number; followDrone: boolean; onZoomChange?: (zoom: number) => void }> = 
+    ({ center, zoom, followDrone: follow, onZoomChange: onZoom }) => {
+    const map = useMap();
+    
+    useEffect(() => {
+      if (follow && center[0] !== 0 && center[1] !== 0) {
+        map.setView(center, zoom, { animate: true, duration: 0.5 });
+      }
+    }, [center, zoom, follow, map]);
+
+    useEffect(() => {
+      const handleZoomEnd = () => {
+        if (onZoom) {
+          onZoom(map.getZoom());
+        }
+      };
+      map.on('zoomend', handleZoomEnd);
+      return () => {
+        map.off('zoomend', handleZoomEnd);
+      };
+    }, [map, onZoom]);
+    
+    return null;
+  };
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
     <div className="h-screen w-full bg-slate-950 flex flex-col">
@@ -968,26 +999,25 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
               const isEnd = index === arr.length - 1;
               const waypointStatus = waypointStatuses.find(ws => ws.index === index);
               
-              // Determine waypoint color: Start=Green, End=Red, Active=Blue, Completed=Green, Default=Gray
-              let statusColor = '#6b7280'; // default gray
+              let statusColor = '#6b7280';
               let borderColor = 'white';
               let size = 24;
               let label = `${index + 1}`;
               
               if (isStart) {
-                statusColor = '#22c55e'; // green
+                statusColor = '#22c55e';
                 borderColor = '#15803d';
                 size = 32;
                 label = 'S';
               } else if (isEnd) {
-                statusColor = '#ef4444'; // red
+                statusColor = '#ef4444';
                 borderColor = '#b91c1c';
                 size = 32;
                 label = 'E';
               } else if (waypointStatus?.status === 'completed') {
-                statusColor = '#22c55e'; // green
+                statusColor = '#22c55e';
               } else if (waypointStatus?.status === 'active') {
-                statusColor = '#3b82f6'; // blue
+                statusColor = '#3b82f6';
               }
 
               return (
@@ -1093,7 +1123,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
             )}
 
             {/* Drone Position */}
-            {typeof window !== 'undefined' && dronePosition && isValidCoordinate(dronePosition.lat, dronePosition.lon) && (
+            {dronePosition && isValidCoordinate(dronePosition.lat, dronePosition.lon) && (
               <Marker
                 position={[dronePosition.lat, dronePosition.lon]}
                 icon={createDroneIcon({

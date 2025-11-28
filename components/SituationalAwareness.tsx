@@ -1,10 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import dynamic from 'next/dynamic';
-import { MapContainer, TileLayer, Marker, Polyline, Polygon, Tooltip, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import { 
   Plane, 
   Radio, 
@@ -16,17 +12,6 @@ import {
   Circle,
   AlertTriangle
 } from 'lucide-react';
-
-// ============================================================================
-// FIX LEAFLET ICONS
-// ============================================================================
-
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -127,41 +112,6 @@ interface FlightPathPoint {
 }
 
 // ============================================================================
-// CUSTOM DRONE ICONS
-// ============================================================================
-
-const createDroneIcon = (color: string, heading: number = 0) => {
-  return L.divIcon({
-    className: 'drone-marker',
-    html: `
-      <div style="
-        width: 32px;
-        height: 32px;
-        position: relative;
-        transform: rotate(${heading}deg);
-      ">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <!-- Drone body -->
-          <circle cx="16" cy="16" r="6" fill="${color}" stroke="white" stroke-width="2"/>
-          <!-- Drone arms -->
-          <line x1="8" y1="8" x2="24" y2="24" stroke="${color}" stroke-width="2"/>
-          <line x1="24" y1="8" x2="8" y2="24" stroke="${color}" stroke-width="2"/>
-          <!-- Propellers -->
-          <circle cx="8" cy="8" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
-          <circle cx="24" cy="8" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
-          <circle cx="8" cy="24" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
-          <circle cx="24" cy="24" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
-          <!-- Direction indicator -->
-          <circle cx="16" cy="12" r="2" fill="white"/>
-        </svg>
-      </div>
-    `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-  });
-};
-
-// ============================================================================
 // DEMO DRONES DATA
 // ============================================================================
 
@@ -248,20 +198,6 @@ const createCorridorPolygon = (waypoints: DemoWaypoint[], corridorWidth: number 
 };
 
 // ============================================================================
-// MAP CENTER UPDATER
-// ============================================================================
-
-const MapCenterUpdater: React.FC<{ center: [number, number]; zoom: number }> = ({ center, zoom }) => {
-  const map = useMap();
-  
-  useEffect(() => {
-    map.setView(center, zoom);
-  }, [center, zoom, map]);
-  
-  return null;
-};
-
-// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -274,6 +210,7 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
   const [selectedDrone, setSelectedDrone] = useState<string | null>(null);
   const [showCorridors, setShowCorridors] = useState<boolean>(true);
   const [showWaypoints, setShowWaypoints] = useState<boolean>(true);
+  const [isClient, setIsClient] = useState(false);
   
   // Simulation state
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
@@ -291,6 +228,14 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
   // API Configuration
   const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8002';
   const API_BASE = process.env.NEXT_PUBLIC_DRONE_API_URL || 'http://localhost:7000';
+
+  // ============================================================================
+  // CLIENT-SIDE CHECK
+  // ============================================================================
+  
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
   
   // ============================================================================
   // WEBSOCKET TELEMETRY CONNECTION
@@ -321,7 +266,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
         setWsConnected(true);
         reconnectAttemptsRef.current = 0;
         
-        // Subscribe to mission if available
         if (selectedMission?.id) {
           ws.send(JSON.stringify({
             action: 'subscribe',
@@ -346,7 +290,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
               console.error('WebSocket error:', message.message);
               break;
             case 'pong':
-              // Keep-alive response
               break;
             default:
               console.log('Unknown message type:', message);
@@ -365,7 +308,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
         console.log(`🔌 WebSocket closed (Code: ${event.code})`);
         setWsConnected(false);
         
-        // Auto-reconnect if simulation is still active
         if (simulationActive && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current += 1;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
@@ -380,7 +322,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
       
       wsRef.current = ws;
       
-      // Setup ping interval
       const pingInterval = setInterval(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ action: 'ping' }));
@@ -416,7 +357,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
   
   const handleTelemetryUpdate = (data: any) => {
     try {
-      // Update telemetry state
       setTelemetry({
         timestamp: data.timestamp,
         position: data.position || data.current_position,
@@ -430,7 +370,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
         mission_count: data.mission_count
       });
       
-      // Update drone position
       if (data.position || data.current_position) {
         const pos = data.position || data.current_position;
         setDronePosition({
@@ -439,18 +378,16 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
           alt: pos.alt || pos.altitude
         });
         
-        // Add to flight path
         setFlightPath(prev => {
           const newPath = [...prev, {
             lat: pos.lat || pos.latitude,
             lon: pos.lon || pos.longitude,
             timestamp: Date.now()
           }];
-          return newPath.slice(-500); // Keep last 500 points
+          return newPath.slice(-500);
         });
       }
       
-      // Update mission progress
       if (data.mission_current !== undefined && data.mission_count !== undefined) {
         setMissionProgress({
           current: data.mission_current,
@@ -475,7 +412,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
     try {
       console.log('📤 Uploading mission to PX4...');
       
-      // Prepare waypoints
       const waypoints = selectedMission.waypoints.map((wp, index) => ({
         lat: wp.lat,
         lon: wp.lng || wp.lon,
@@ -483,7 +419,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
         sequence: index
       }));
       
-      // Upload mission
       const uploadResponse = await fetch(`${API_BASE}/mission/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -495,10 +430,8 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
       if (uploadData.success) {
         console.log('✅ Mission uploaded successfully');
         
-        // Wait a moment for upload to settle
         await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Start mission automatically
         console.log('🚀 Starting mission...');
         const startResponse = await fetch(`${API_BASE}/mission/start`, {
           method: 'POST'
@@ -524,15 +457,12 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
   // EFFECTS
   // ============================================================================
   
-  // Auto-connect WebSocket when simulation becomes active
   useEffect(() => {
     if (simulationMode && simulationActive && selectedMission) {
       console.log('🎮 Simulation activated - initializing...');
       
-      // Step 1: Upload and start mission
       uploadAndStartMission();
       
-      // Step 2: Connect WebSocket after a short delay
       const connectTimer = setTimeout(() => {
         connectWebSocket();
       }, 2000);
@@ -542,7 +472,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
         disconnectWebSocket();
       };
     } else {
-      // Disconnect when simulation stops
       disconnectWebSocket();
       setFlightPath([]);
       setDronePosition(null);
@@ -550,7 +479,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
     }
   }, [simulationMode, simulationActive, selectedMission]);
   
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       disconnectWebSocket();
@@ -562,12 +490,10 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
   // ============================================================================
   
   const getMapCenter = (): [number, number] => {
-    // If we have a live drone position from simulation, use it
     if (simulationMode && dronePosition) {
       return [dronePosition.lat, dronePosition.lon];
     }
     
-    // Otherwise use mission waypoints or demo drones
     if (selectedMission?.waypoints?.[0]) {
       const firstWp = selectedMission.waypoints[0];
       const lon = firstWp.lng ?? firstWp.lon;
@@ -582,7 +508,6 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
   const [mapCenter, setMapCenter] = useState<[number, number]>(getMapCenter());
   const [mapZoom] = useState<number>(selectedMission ? 12 : 11);
 
-  // Update map center when drone position changes
   useEffect(() => {
     if (simulationMode && dronePosition) {
       setMapCenter([dronePosition.lat, dronePosition.lon]);
@@ -630,6 +555,79 @@ const SituationalAwareness: React.FC<SituationalAwarenessProps> = ({
   const missionCorridorPolygon = missionWaypoints.length > 1 
     ? createCorridorPolygon(missionWaypoints, 0.01)
     : [];
+
+  // ============================================================================
+  // LOADING STATE (Server-side)
+  // ============================================================================
+
+  if (!isClient) {
+    return (
+      <div className="relative h-full w-full bg-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-slate-400">Loading map...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // CLIENT-SIDE RENDER WITH DYNAMIC IMPORTS
+  // ============================================================================
+
+  // Dynamic imports for Leaflet (only on client)
+  const L = require('leaflet');
+  const { MapContainer, TileLayer, Marker, Polyline, Polygon, Tooltip, Popup, useMap } = require('react-leaflet');
+  
+  // Import CSS
+  require('leaflet/dist/leaflet.css');
+
+  // Fix Leaflet icons
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  });
+
+  // Create drone icon function
+  const createDroneIcon = (color: string, heading: number = 0) => {
+    return L.divIcon({
+      className: 'drone-marker',
+      html: `
+        <div style="
+          width: 32px;
+          height: 32px;
+          position: relative;
+          transform: rotate(${heading}deg);
+        ">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="16" cy="16" r="6" fill="${color}" stroke="white" stroke-width="2"/>
+            <line x1="8" y1="8" x2="24" y2="24" stroke="${color}" stroke-width="2"/>
+            <line x1="24" y1="8" x2="8" y2="24" stroke="${color}" stroke-width="2"/>
+            <circle cx="8" cy="8" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
+            <circle cx="24" cy="8" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
+            <circle cx="8" cy="24" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
+            <circle cx="24" cy="24" r="4" fill="${color}" stroke="white" stroke-width="1.5" opacity="0.7"/>
+            <circle cx="16" cy="12" r="2" fill="white"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+    });
+  };
+
+  // Map Center Updater component
+  const MapCenterUpdater: React.FC<{ center: [number, number]; zoom: number }> = ({ center, zoom }) => {
+    const map = useMap();
+    
+    useEffect(() => {
+      map.setView(center, zoom);
+    }, [center, zoom, map]);
+    
+    return null;
+  };
 
   // ============================================================================
   // RENDER
