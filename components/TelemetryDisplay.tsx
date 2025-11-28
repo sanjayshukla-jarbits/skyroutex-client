@@ -5,6 +5,7 @@
  * 1. Uses wsConnected OR status.connected to determine connection state
  * 2. Better null handling for all telemetry values
  * 3. Proper fallback chain for position, battery, GPS data
+ * 4. Fixed NaN handling for altitude and other numeric values
  */
 
 import React, { useEffect, useState, useRef } from 'react';
@@ -20,6 +21,9 @@ interface Position {
   latitude?: number;
   longitude?: number;
   altitude?: number;
+  relative_alt?: number;
+  relative_altitude?: number;
+  agl?: number;
 }
 
 interface Battery {
@@ -52,7 +56,13 @@ interface Telemetry {
     vy?: number;
     vz?: number;
     ground_speed?: number;
+    groundspeed?: number;
   };
+  // Root level altitude fields
+  alt?: number;
+  altitude?: number;
+  relative_alt?: number;
+  relative_altitude?: number;
 }
 
 interface Status {
@@ -77,6 +87,16 @@ interface TelemetryDisplayProps {
 }
 
 // ============================================================================
+// HELPER FUNCTION - Safe Number Conversion
+// ============================================================================
+
+const safeNumber = (value: any, defaultValue: number = 0): number => {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  const num = Number(value);
+  return isNaN(num) ? defaultValue : num;
+};
+
+// ============================================================================
 // COMPONENT
 // ============================================================================
 
@@ -99,7 +119,7 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
     }
   }, [telemetry]);
 
-  // ⭐ FIX: Use wsConnected OR status.connected for connection state
+  // Use wsConnected OR status.connected for connection state
   const isConnected = wsConnected || status?.connected || false;
 
   const formatTimeAgo = (timestamp?: number): string => {
@@ -130,34 +150,62 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
     const statusPos = status?.current_position;
     
     if (field === 'lat') {
-      return Number(telemetryPos?.lat ?? telemetryPos?.latitude ?? statusPos?.lat ?? statusPos?.latitude ?? 0);
+      return safeNumber(
+        telemetryPos?.lat ?? 
+        telemetryPos?.latitude ?? 
+        statusPos?.lat ?? 
+        statusPos?.latitude, 
+        0
+      );
     } else if (field === 'lon') {
-      return Number(telemetryPos?.lon ?? telemetryPos?.longitude ?? statusPos?.lon ?? statusPos?.longitude ?? 0);
+      return safeNumber(
+        telemetryPos?.lon ?? 
+        telemetryPos?.longitude ?? 
+        statusPos?.lon ?? 
+        statusPos?.longitude, 
+        0
+      );
     } else {
-      return Number(telemetryPos?.alt ?? telemetryPos?.altitude ?? statusPos?.alt ?? statusPos?.altitude ?? 0);
+      // For altitude, check multiple possible field names
+      return safeNumber(
+        telemetryPos?.alt ?? 
+        telemetryPos?.altitude ?? 
+        telemetryPos?.relative_alt ??
+        telemetryPos?.relative_altitude ??
+        telemetryPos?.agl ??
+        telemetry?.alt ??
+        telemetry?.altitude ??
+        telemetry?.relative_alt ??
+        telemetry?.relative_altitude ??
+        statusPos?.alt ?? 
+        statusPos?.altitude ??
+        statusPos?.relative_alt ??
+        statusPos?.relative_altitude,
+        0
+      );
     }
   };
 
   const getBatteryRemaining = (): number => {
-    return Number(
+    return safeNumber(
       telemetry?.battery?.remaining ?? 
       telemetry?.battery?.level ?? 
-      status?.battery_level ?? 
+      status?.battery_level,
       0
     );
   };
 
   const getSatelliteCount = (): number => {
-    return Number(
+    return safeNumber(
       telemetry?.gps?.satellites ?? 
       telemetry?.gps?.num_satellites ?? 
-      telemetry?.gps?.satellites_visible ?? 
+      telemetry?.gps?.satellites_visible,
       0
     );
   };
 
   const getGPSFixType = (): number => {
-    return Number(telemetry?.gps?.fix_type ?? 0);
+    return safeNumber(telemetry?.gps?.fix_type, 0);
   };
 
   const getGPSFixString = (fixType: number): string => {
@@ -189,43 +237,45 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
   };
 
   const getFlightMode = (): string => {
-    return telemetry?.flight_mode ?? status?.flight_mode ?? '--';
+    return telemetry?.flight_mode ?? status?.flight_mode ?? 'UNKNOWN';
   };
 
+  const getGroundSpeed = (): number => {
+    const velocity = telemetry?.velocity;
+    if (velocity?.ground_speed !== undefined) {
+      return safeNumber(velocity.ground_speed, 0);
+    }
+    if (velocity?.groundspeed !== undefined) {
+      return safeNumber(velocity.groundspeed, 0);
+    }
+    // Calculate from vx, vy if available
+    const vx = safeNumber(velocity?.vx, 0);
+    const vy = safeNumber(velocity?.vy, 0);
+    return Math.sqrt(vx * vx + vy * vy);
+  };
+
+  // Get computed values
   const batteryRemaining = getBatteryRemaining();
   const satelliteCount = getSatelliteCount();
   const gpsFixType = getGPSFixType();
 
   return (
-    <div className={`absolute top-4 right-4 bg-gray-900/95 backdrop-blur-sm rounded-lg border ${
-      isPulsing ? 'border-green-500 shadow-lg shadow-green-500/50' : 'border-gray-700'
-    } w-[380px] max-h-[calc(100vh-120px)] overflow-y-auto z-[1000] shadow-2xl transition-all duration-200`}>
-      
+    <div className={`bg-slate-900 text-white h-full ${isPulsing ? 'ring-2 ring-cyan-500/50' : ''}`}>
       {/* Header */}
-      <div className="sticky top-0 bg-gray-900 p-4 border-b border-gray-700">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-lg font-semibold text-white">Live Telemetry</h3>
+      <div className="p-4 border-b border-gray-700 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold">Live Telemetry</h3>
           <div className="flex items-center gap-2">
-            {/* ⭐ FIX: Use isConnected instead of status?.connected */}
-            <span className={`text-xs flex items-center gap-1 ${
-              isConnected ? 'text-green-400' : 'text-red-400'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${
-                isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'
-              }`}></span>
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+            <span className={`text-sm ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
               {isConnected ? 'Connected' : 'Disconnected'}
             </span>
-            {wsConnected && (
-              <span className="text-xs text-blue-400 flex items-center gap-1">
-                <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
-                WS
-              </span>
-            )}
+            <span className="text-xs text-gray-500">● WS</span>
           </div>
         </div>
         
-        {/* Status indicators */}
-        <div className="flex items-center gap-2 mb-2">
+        {/* Status Badges */}
+        <div className="flex flex-wrap gap-2">
           <span className={`px-2 py-1 rounded text-xs font-semibold ${
             status?.armed ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400'
           }`}>
@@ -287,7 +337,7 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
             <div>
               <div className="text-gray-400 text-xs mb-1">HEADING</div>
               <div className="text-white font-mono text-sm">
-                {(telemetry?.attitude?.yaw ?? 0).toFixed(1)} °
+                {safeNumber(telemetry?.attitude?.yaw, 0).toFixed(1)} °
               </div>
             </div>
           </div>
@@ -300,19 +350,19 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
             <div>
               <div className="text-gray-400 text-xs mb-1">ROLL</div>
               <div className="text-white font-mono text-sm">
-                {(telemetry?.attitude?.roll ?? 0).toFixed(1)} °
+                {safeNumber(telemetry?.attitude?.roll, 0).toFixed(1)} °
               </div>
             </div>
             <div>
               <div className="text-gray-400 text-xs mb-1">PITCH</div>
               <div className="text-white font-mono text-sm">
-                {(telemetry?.attitude?.pitch ?? 0).toFixed(1)} °
+                {safeNumber(telemetry?.attitude?.pitch, 0).toFixed(1)} °
               </div>
             </div>
             <div>
               <div className="text-gray-400 text-xs mb-1">YAW</div>
               <div className="text-white font-mono text-sm">
-                {(telemetry?.attitude?.yaw ?? 0).toFixed(1)} °
+                {safeNumber(telemetry?.attitude?.yaw, 0).toFixed(1)} °
               </div>
             </div>
           </div>
@@ -325,24 +375,19 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
             <div>
               <div className="text-gray-400 text-xs mb-1">GROUND SPD</div>
               <div className="text-white font-mono text-sm">
-                {(telemetry?.velocity?.ground_speed ?? 
-                  Math.sqrt(
-                    Math.pow(telemetry?.velocity?.vx ?? 0, 2) + 
-                    Math.pow(telemetry?.velocity?.vy ?? 0, 2)
-                  )
-                ).toFixed(1)} <span className="text-gray-500">m/s</span>
+                {getGroundSpeed().toFixed(1)} <span className="text-gray-500">m/s</span>
               </div>
             </div>
             <div>
               <div className="text-gray-400 text-xs mb-1">CLIMB</div>
               <div className="text-white font-mono text-sm">
-                {(telemetry?.velocity?.vz ?? 0).toFixed(1)} <span className="text-gray-500">m/s</span>
+                {safeNumber(telemetry?.velocity?.vz, 0).toFixed(1)} <span className="text-gray-500">m/s</span>
               </div>
             </div>
             <div>
               <div className="text-gray-400 text-xs mb-1">VZ</div>
               <div className="text-white font-mono text-sm">
-                {(telemetry?.velocity?.vz ?? 0).toFixed(1)} <span className="text-gray-500">m/s</span>
+                {safeNumber(telemetry?.velocity?.vz, 0).toFixed(1)} <span className="text-gray-500">m/s</span>
               </div>
             </div>
           </div>
@@ -358,7 +403,7 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
                   {batteryRemaining.toFixed(0)}%
                 </span>
                 <span className="text-gray-400 text-xs">
-                  {(telemetry?.battery?.voltage ?? 0).toFixed(1)}V
+                  {safeNumber(telemetry?.battery?.voltage, 0).toFixed(1)}V
                 </span>
               </div>
               <div className="w-full bg-gray-700 rounded-full h-2">
@@ -368,7 +413,7 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
                 />
               </div>
               <div className="text-gray-500 text-xs mt-1">
-                {(telemetry?.battery?.current ?? 0).toFixed(1)}A
+                {safeNumber(telemetry?.battery?.current, 0).toFixed(1)}A
               </div>
             </div>
           </div>
@@ -391,11 +436,9 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
                 </span>
               </div>
             </div>
-            {telemetry?.gps?.hdop !== undefined && (
-              <div className="text-gray-400 text-xs">
-                HDOP: {telemetry.gps.hdop.toFixed(1)}
-              </div>
-            )}
+            <div className="text-gray-400 text-xs">
+              HDOP: {safeNumber(telemetry?.gps?.hdop, 0).toFixed(1)}
+            </div>
           </div>
         </div>
 
