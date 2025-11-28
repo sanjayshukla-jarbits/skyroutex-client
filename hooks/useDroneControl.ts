@@ -5,7 +5,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import droneControlService from '@/services/DroneControlService';
+import droneControlService from '@/services/droneControlService';
 import { 
   TelemetryData, 
   CommandResponse,

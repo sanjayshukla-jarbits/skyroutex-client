@@ -1,4 +1,17 @@
+/**
+ * TelemetryDisplay Component - FIXED VERSION
+ * 
+ * Changes:
+ * 1. Uses wsConnected OR status.connected to determine connection state
+ * 2. Better null handling for all telemetry values
+ * 3. Proper fallback chain for position, battery, GPS data
+ */
+
 import React, { useEffect, useState, useRef } from 'react';
+
+// ============================================================================
+// INTERFACES
+// ============================================================================
 
 interface Position {
   lat?: number;
@@ -19,6 +32,7 @@ interface Battery {
 interface GPS {
   satellites?: number;
   num_satellites?: number;
+  satellites_visible?: number;
   fix_type?: number;
   hdop?: number;
 }
@@ -62,6 +76,10 @@ interface TelemetryDisplayProps {
   isPulsing?: boolean;
 }
 
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
 const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
   telemetry,
   status,
@@ -80,6 +98,9 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
       prevTelemetryRef.current = telemetry;
     }
   }, [telemetry]);
+
+  // ⭐ FIX: Use wsConnected OR status.connected for connection state
+  const isConnected = wsConnected || status?.connected || false;
 
   const formatTimeAgo = (timestamp?: number): string => {
     if (!timestamp) return 'N/A';
@@ -118,11 +139,21 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
   };
 
   const getBatteryRemaining = (): number => {
-    return Number(telemetry?.battery?.remaining ?? telemetry?.battery?.level ?? status?.battery_level ?? 0);
+    return Number(
+      telemetry?.battery?.remaining ?? 
+      telemetry?.battery?.level ?? 
+      status?.battery_level ?? 
+      0
+    );
   };
 
   const getSatelliteCount = (): number => {
-    return Number(telemetry?.gps?.satellites ?? telemetry?.gps?.num_satellites ?? 0);
+    return Number(
+      telemetry?.gps?.satellites ?? 
+      telemetry?.gps?.num_satellites ?? 
+      telemetry?.gps?.satellites_visible ?? 
+      0
+    );
   };
 
   const getGPSFixType = (): number => {
@@ -157,6 +188,10 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
     return fixType >= 3 ? 'text-green-400' : 'text-yellow-400';
   };
 
+  const getFlightMode = (): string => {
+    return telemetry?.flight_mode ?? status?.flight_mode ?? '--';
+  };
+
   const batteryRemaining = getBatteryRemaining();
   const satelliteCount = getSatelliteCount();
   const gpsFixType = getGPSFixType();
@@ -166,25 +201,46 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
       isPulsing ? 'border-green-500 shadow-lg shadow-green-500/50' : 'border-gray-700'
     } w-[380px] max-h-[calc(100vh-120px)] overflow-y-auto z-[1000] shadow-2xl transition-all duration-200`}>
       
+      {/* Header */}
       <div className="sticky top-0 bg-gray-900 p-4 border-b border-gray-700">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-lg font-semibold text-white">Live Telemetry</h3>
           <div className="flex items-center gap-2">
+            {/* ⭐ FIX: Use isConnected instead of status?.connected */}
             <span className={`text-xs flex items-center gap-1 ${
-              status?.connected ? 'text-green-400' : 'text-red-400'
+              isConnected ? 'text-green-400' : 'text-red-400'
             }`}>
               <span className={`w-2 h-2 rounded-full ${
-                status?.connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'
+                isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'
               }`}></span>
-              {status?.connected ? 'Connected' : 'Disconnected'}
+              {isConnected ? 'Connected' : 'Disconnected'}
             </span>
             {wsConnected && (
               <span className="text-xs text-blue-400 flex items-center gap-1">
                 <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
-                WebSocket
+                WS
               </span>
             )}
           </div>
+        </div>
+        
+        {/* Status indicators */}
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+            status?.armed ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400'
+          }`}>
+            {status?.armed ? '● Armed' : '○ Armed'}
+            <span className="ml-1">{status?.armed ? 'YES' : 'NO'}</span>
+          </span>
+          <span className={`px-2 py-1 rounded text-xs font-semibold ${
+            status?.flying ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-400'
+          }`}>
+            {status?.flying ? '● Flying' : '○ Flying'}
+            <span className="ml-1">{status?.flying ? 'YES' : 'NO'}</span>
+          </span>
+          <span className="px-2 py-1 rounded text-xs font-semibold bg-gray-700 text-gray-300">
+            ● Mode <span className="ml-1">{getFlightMode()}</span>
+          </span>
         </div>
         
         <div className="flex items-center justify-between text-xs">
@@ -206,123 +262,113 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
 
       <div className="p-4 space-y-4">
         
-        {/* Flight Status */}
+        {/* Position */}
         <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-          <h4 className="text-sm font-semibold text-gray-300 mb-2">Flight Status</h4>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Status:</span>
-              <div className="flex gap-2">
-                <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                  status?.armed ? 'bg-yellow-600 text-white' : 'bg-gray-700 text-gray-400'
-                }`}>
-                  {status?.armed ? '🔓 ARMED' : '🔒 DISARMED'}
-                </span>
-                <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                  status?.flying ? 'bg-green-600 text-white' : 'bg-gray-700 text-gray-400'
-                }`}>
-                  {status?.flying ? '✈️ FLYING' : '🛬 LANDED'}
-                </span>
+          <h4 className="text-sm font-semibold text-gray-300 mb-2">POSITION</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-gray-400 text-xs mb-1">LATITUDE</div>
+              <div className="text-white font-mono text-sm">
+                {getPositionValue('lat').toFixed(6)} °
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Mode:</span>
-              <span className="text-cyan-400 font-mono text-xs font-semibold">
-                {status?.flight_mode || telemetry?.flight_mode || 'N/A'}
-              </span>
-            </div>
-            {status?.mission_active && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">Mission:</span>
-                <span className="text-blue-400 font-mono text-xs">
-                  WP {status?.mission_current || 0} / {status?.mission_count || 0}
-                </span>
+            <div>
+              <div className="text-gray-400 text-xs mb-1">LONGITUDE</div>
+              <div className="text-white font-mono text-sm">
+                {getPositionValue('lon').toFixed(6)} °
               </div>
-            )}
+            </div>
+            <div>
+              <div className="text-gray-400 text-xs mb-1">ALTITUDE</div>
+              <div className="text-white font-mono text-sm">
+                {getPositionValue('alt').toFixed(1)} <span className="text-gray-500">m</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-gray-400 text-xs mb-1">HEADING</div>
+              <div className="text-white font-mono text-sm">
+                {(telemetry?.attitude?.yaw ?? 0).toFixed(1)} °
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Position */}
+        {/* Attitude */}
         <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-          <h4 className="text-sm font-semibold text-gray-300 mb-2">Position</h4>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Latitude:</span>
-              <span className="text-white font-mono text-xs">
-                {getPositionValue('lat').toFixed(6)}°
-              </span>
+          <h4 className="text-sm font-semibold text-gray-300 mb-2">ATTITUDE</h4>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <div className="text-gray-400 text-xs mb-1">ROLL</div>
+              <div className="text-white font-mono text-sm">
+                {(telemetry?.attitude?.roll ?? 0).toFixed(1)} °
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Longitude:</span>
-              <span className="text-white font-mono text-xs">
-                {getPositionValue('lon').toFixed(6)}°
-              </span>
+            <div>
+              <div className="text-gray-400 text-xs mb-1">PITCH</div>
+              <div className="text-white font-mono text-sm">
+                {(telemetry?.attitude?.pitch ?? 0).toFixed(1)} °
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Altitude:</span>
-              <span className="text-white font-mono text-xs">
-                {getPositionValue('alt').toFixed(2)} m
-              </span>
+            <div>
+              <div className="text-gray-400 text-xs mb-1">YAW</div>
+              <div className="text-white font-mono text-sm">
+                {(telemetry?.attitude?.yaw ?? 0).toFixed(1)} °
+              </div>
             </div>
           </div>
         </div>
 
         {/* Velocity */}
-        {telemetry?.velocity && (
-          <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-            <h4 className="text-sm font-semibold text-gray-300 mb-2">Velocity</h4>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">Ground:</span>
-                <span className="text-white font-mono text-xs">
-                  {telemetry.velocity.ground_speed?.toFixed(1) ?? 
-                   Math.sqrt(Math.pow(telemetry.velocity.vx ?? 0, 2) + Math.pow(telemetry.velocity.vy ?? 0, 2)).toFixed(1)} m/s
-                </span>
+        <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
+          <h4 className="text-sm font-semibold text-gray-300 mb-2">VELOCITY</h4>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <div className="text-gray-400 text-xs mb-1">GROUND SPD</div>
+              <div className="text-white font-mono text-sm">
+                {(telemetry?.velocity?.ground_speed ?? 
+                  Math.sqrt(
+                    Math.pow(telemetry?.velocity?.vx ?? 0, 2) + 
+                    Math.pow(telemetry?.velocity?.vy ?? 0, 2)
+                  )
+                ).toFixed(1)} <span className="text-gray-500">m/s</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">Vertical:</span>
-                <span className="text-white font-mono text-xs">
-                  {(telemetry.velocity.vz ?? 0).toFixed(1)} m/s
-                </span>
+            </div>
+            <div>
+              <div className="text-gray-400 text-xs mb-1">CLIMB</div>
+              <div className="text-white font-mono text-sm">
+                {(telemetry?.velocity?.vz ?? 0).toFixed(1)} <span className="text-gray-500">m/s</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-gray-400 text-xs mb-1">VZ</div>
+              <div className="text-white font-mono text-sm">
+                {(telemetry?.velocity?.vz ?? 0).toFixed(1)} <span className="text-gray-500">m/s</span>
               </div>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Battery */}
         <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
-          <h4 className="text-sm font-semibold text-gray-300 mb-2">Battery</h4>
-          <div className="space-y-2">
-            {telemetry?.battery?.voltage !== undefined && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">Voltage:</span>
-                <span className="text-white font-mono text-xs">
-                  {Number(telemetry.battery.voltage).toFixed(2)} V
+          <h4 className="text-sm font-semibold text-gray-300 mb-2">BATTERY</h4>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className={`font-mono text-lg font-bold ${getBatteryColor(batteryRemaining)}`}>
+                  {batteryRemaining.toFixed(0)}%
+                </span>
+                <span className="text-gray-400 text-xs">
+                  {(telemetry?.battery?.voltage ?? 0).toFixed(1)}V
                 </span>
               </div>
-            )}
-            {telemetry?.battery?.current !== undefined && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">Current:</span>
-                <span className="text-white font-mono text-xs">
-                  {Number(telemetry.battery.current).toFixed(2)} A
-                </span>
+              <div className="w-full bg-gray-700 rounded-full h-2">
+                <div 
+                  className={`h-2 rounded-full transition-all ${getBatteryBarColor(batteryRemaining)}`}
+                  style={{ width: `${Math.min(batteryRemaining, 100)}%` }}
+                />
               </div>
-            )}
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Remaining:</span>
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className={`font-mono text-xs font-semibold ${getBatteryColor(batteryRemaining)}`}>
-                    {batteryRemaining.toFixed(0)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
-                  <div 
-                    className={`h-1.5 rounded-full transition-all ${getBatteryBarColor(batteryRemaining)}`}
-                    style={{ width: `${batteryRemaining}%` }}
-                  />
-                </div>
+              <div className="text-gray-500 text-xs mt-1">
+                {(telemetry?.battery?.current ?? 0).toFixed(1)}A
               </div>
             </div>
           </div>
@@ -331,29 +377,28 @@ const TelemetryDisplay: React.FC<TelemetryDisplayProps> = ({
         {/* GPS */}
         <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700">
           <h4 className="text-sm font-semibold text-gray-300 mb-2">GPS</h4>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Satellites:</span>
-              <span className={`font-mono text-xs font-semibold ${getGPSColor(satelliteCount)}`}>
-                {satelliteCount} 🛰️
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-400 text-xs w-16">Fix Type:</span>
-              <span className={`text-xs font-semibold ${getGPSFixColor(gpsFixType)}`}>
-                {getGPSFixString(gpsFixType)}
-              </span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div>
+                <span className={`font-mono text-sm font-bold ${getGPSFixColor(gpsFixType)}`}>
+                  {getGPSFixString(gpsFixType)}
+                </span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-gray-400 text-xs">📡</span>
+                <span className={`font-mono text-sm ${getGPSColor(satelliteCount)}`}>
+                  {satelliteCount} sats
+                </span>
+              </div>
             </div>
             {telemetry?.gps?.hdop !== undefined && (
-              <div className="flex items-center gap-2">
-                <span className="text-gray-400 text-xs w-16">HDOP:</span>
-                <span className="text-white font-mono text-xs">
-                  {Number(telemetry.gps.hdop).toFixed(2)}
-                </span>
+              <div className="text-gray-400 text-xs">
+                HDOP: {telemetry.gps.hdop.toFixed(1)}
               </div>
             )}
           </div>
         </div>
+
       </div>
     </div>
   );
