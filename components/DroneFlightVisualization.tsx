@@ -5,19 +5,18 @@
  * Real-time drone flight visualization using Kafka-based telemetry updates.
  * Supports both Kafka (via WebSocket proxy) and fallback WebSocket/HTTP polling.
  * 
- * Features:
- * - Real-time position tracking on map
- * - Flight path visualization
- * - Telemetry display (position, attitude, battery, GPS, velocity)
- * - Mission waypoint visualization
- * - Auto-reconnection with exponential backoff
- * - Esri Satellite Imagery for better terrain visualization
- * - Zoom controls with follow drone mode
+ * FIXED ISSUES:
+ * - Removed invalid 'configure' action
+ * - Proper message type handling
+ * - Better debug logging
  */
 
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { 
   ArrowLeft, 
   Wifi,
@@ -34,6 +33,14 @@ import {
 } from 'lucide-react';
 import TelemetryDisplay from '@/components/TelemetryDisplay';
 import { createDroneIcon, getDroneStatus } from '@/components/droneIconUtils';
+
+// Fix Leaflet default icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -94,6 +101,10 @@ interface TelemetryData {
   altitude?: number;
   relative_alt?: number;
   relative_altitude?: number;
+  lat?: number;
+  latitude?: number;
+  lon?: number;
+  longitude?: number;
 }
 
 interface DroneStatus {
@@ -183,6 +194,41 @@ const isValidCoordinate = (lat: number | undefined, lon: number | undefined): bo
     lon >= -180 && 
     lon <= 180
   );
+};
+
+// ============================================================================
+// MAP CONTROLLER COMPONENT
+// ============================================================================
+
+interface MapControllerProps {
+  center: [number, number];
+  zoom: number;
+  followDrone: boolean;
+  onZoomChange?: (zoom: number) => void;
+}
+
+const MapController: React.FC<MapControllerProps> = ({ center, zoom, followDrone, onZoomChange }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (followDrone && center[0] !== 0 && center[1] !== 0) {
+      map.setView(center, zoom, { animate: true, duration: 0.5 });
+    }
+  }, [center, zoom, followDrone, map]);
+
+  useEffect(() => {
+    const handleZoomEnd = () => {
+      if (onZoomChange) {
+        onZoomChange(map.getZoom());
+      }
+    };
+    map.on('zoomend', handleZoomEnd);
+    return () => {
+      map.off('zoomend', handleZoomEnd);
+    };
+  }, [map, onZoomChange]);
+  
+  return null;
 };
 
 // ============================================================================
@@ -331,11 +377,6 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   onBack 
 }) => {
   // ============================================================================
-  // CLIENT-SIDE CHECK STATE
-  // ============================================================================
-  const [isClient, setIsClient] = useState(false);
-
-  // ============================================================================
   // STATE
   // ============================================================================
   
@@ -361,7 +402,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
 
   // Map zoom and follow state
   const [followDrone, setFollowDrone] = useState<boolean>(true);
-  const mapRef = useRef<any>(null);
+  const mapRef = useRef<L.Map | null>(null);
   
   // Refs
   const wsRef = useRef<WebSocket | null>(null);
@@ -388,14 +429,6 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   
   const [mapCenter, setMapCenter] = useState<[number, number]>(getDefaultPosition());
   const [mapZoom, setMapZoom] = useState(selectedMission ? 15 : 18);
-
-  // ============================================================================
-  // CLIENT-SIDE CHECK EFFECT
-  // ============================================================================
-  
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
 
   // ============================================================================
   // ZOOM CONTROL HANDLERS
@@ -436,10 +469,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   }, [dronePosition, mapZoom]);
 
   const handleFitMission = useCallback(() => {
-    if (!isClient) return;
-    
     if (mapRef.current && selectedMission?.waypoints?.length) {
-      const L = require('leaflet');
       const validWaypoints = selectedMission.waypoints.filter(wp => {
         const lng = getWaypointLongitude(wp);
         return isValidCoordinate(wp.lat, lng);
@@ -458,7 +488,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         setFollowDrone(false);
       }
     }
-  }, [selectedMission, dronePosition, isClient]);
+  }, [selectedMission, dronePosition]);
 
   const handleToggleFollow = useCallback(() => {
     setFollowDrone(prev => !prev);
@@ -480,6 +510,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
 
   const handleTelemetryUpdate = useCallback((data: TelemetryData) => {
     try {
+      // Handle both nested position and flat structure
       const positionData = data.position || data;
       
       const safeNumber = (value: any, defaultValue: number = 0): number => {
@@ -488,6 +519,41 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         return isNaN(num) ? defaultValue : num;
       };
       
+      // Extract latitude
+      const getLat = (): number => {
+        const sources = [
+          positionData?.lat,
+          positionData?.latitude,
+          (data as any)?.lat,
+          (data as any)?.latitude,
+        ];
+        for (const src of sources) {
+          if (src !== undefined && src !== null) {
+            const num = Number(src);
+            if (!isNaN(num) && num !== 0) return num;
+          }
+        }
+        return 0;
+      };
+
+      // Extract longitude
+      const getLon = (): number => {
+        const sources = [
+          positionData?.lon,
+          positionData?.longitude,
+          (data as any)?.lon,
+          (data as any)?.longitude,
+        ];
+        for (const src of sources) {
+          if (src !== undefined && src !== null) {
+            const num = Number(src);
+            if (!isNaN(num) && num !== 0) return num;
+          }
+        }
+        return 0;
+      };
+      
+      // Extract altitude
       const getAltitude = (): number => {
         const altFields = [
           positionData?.alt,
@@ -510,12 +576,13 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         return 0;
       };
       
-      const position = positionData ? {
-        lat: safeNumber(positionData.lat ?? positionData.latitude, 0),
-        lon: safeNumber(positionData.lon ?? positionData.longitude, 0),
-        alt: getAltitude(),
-      } : null;
+      const lat = getLat();
+      const lon = getLon();
+      const alt = getAltitude();
 
+      const position: Position | null = (lat !== 0 && lon !== 0) ? { lat, lon, alt } : null;
+
+      // Update telemetry state
       setTelemetry({
         position: position ? {
           lat: position.lat,
@@ -542,7 +609,9 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
 
       updateCountRef.current += 1;
 
+      // Update drone position if valid
       if (position && isValidCoordinate(position.lat, position.lon)) {
+        console.log('📍 Drone position updated:', position.lat.toFixed(6), position.lon.toFixed(6));
         setDronePosition(position);
 
         setFlightPath(prev => {
@@ -560,6 +629,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         }
       }
 
+      // Update status
       setStatus(prev => ({
         connected: true,
         armed: data.armed ?? prev?.armed ?? false,
@@ -578,7 +648,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   }, [followDrone]);
 
   // ============================================================================
-  // WEBSOCKET CONNECTION
+  // STANDARD WEBSOCKET CONNECTION (FALLBACK)
   // ============================================================================
 
   const connectWebSocket = useCallback(() => {
@@ -587,9 +657,11 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     }
 
     try {
+      console.log(`🔌 Connecting to standard WebSocket: ${WS_BASE}/ws/telemetry`);
       const ws = new WebSocket(`${WS_BASE}/ws/telemetry`);
 
       ws.onopen = () => {
+        console.log('✅ Standard WebSocket connected');
         setIsConnected(true);
         setTelemetrySource('websocket');
         reconnectAttemptsRef.current = 0;
@@ -605,7 +677,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          if (message.type === 'telemetry_update') {
+          if (message.type === 'telemetry_update' || message.type === 'telemetry') {
             handleTelemetryUpdate(message.data || message);
           }
         } catch (error) {
@@ -614,10 +686,12 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
       };
 
       ws.onerror = () => {
+        console.error('❌ Standard WebSocket error');
         setIsConnected(false);
       };
 
       ws.onclose = () => {
+        console.log('🔌 Standard WebSocket closed');
         setIsConnected(false);
         setTelemetrySource('disconnected');
         wsRef.current = null;
@@ -640,6 +714,10 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     }
   }, [currentMissionId, handleTelemetryUpdate]);
 
+  // ============================================================================
+  // KAFKA WEBSOCKET CONNECTION (FIXED)
+  // ============================================================================
+
   const connectKafkaWebSocket = useCallback(() => {
     if (!useKafka) {
       connectWebSocket();
@@ -647,48 +725,71 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     }
 
     if (kafkaWsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('🟢 Kafka WebSocket already connected');
+      return;
+    }
+
+    if (kafkaWsRef.current?.readyState === WebSocket.CONNECTING) {
+      console.log('🟡 Kafka WebSocket connection in progress...');
       return;
     }
 
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+      console.warn('🔴 Max reconnect attempts reached, falling back to standard WebSocket');
       setUseKafka(false);
       connectWebSocket();
       return;
     }
 
     try {
+      console.log(`🔌 Connecting to Kafka WebSocket: ${KAFKA_WS_URL}`);
       const ws = new WebSocket(KAFKA_WS_URL);
 
       ws.onopen = () => {
+        console.log('✅ Kafka WebSocket connected!');
         setIsConnected(true);
         setTelemetrySource('kafka');
         reconnectAttemptsRef.current = 0;
 
-        ws.send(JSON.stringify({
-          action: 'configure',
-          topics: ['drone-telemetry', 'drone-status'],
-          group_id: 'skyroutex-flight-viz',
-        }));
-
+        // ✅ FIX: Only send 'subscribe' action - removed invalid 'configure' action
+        // The proxy auto-subscribes to Kafka topics on startup
         if (currentMissionId) {
-          ws.send(JSON.stringify({
-            action: 'subscribe_vehicle',
+          const subscribeMsg = {
+            action: 'subscribe',
             vehicle_id: currentMissionId,
-          }));
+          };
+          console.log('📤 Subscribing to vehicle:', subscribeMsg);
+          ws.send(JSON.stringify(subscribeMsg));
         }
       };
 
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          
+          // Debug logging (skip pong messages)
+          if (message.type !== 'pong') {
+            console.log('📥 Kafka message:', message.type, message);
+          }
 
           switch (message.type) {
+            case 'connection_info':
+              console.log('🔗 Connected to Kafka proxy:', message);
+              if (!message.kafka_available) {
+                console.warn('⚠️ Kafka not available on server - telemetry may not work!');
+              }
+              break;
+
             case 'telemetry_update':
             case 'telemetry':
-              handleTelemetryUpdate(message.data || message);
+              // Handle telemetry data
+              const telemetryData = message.data || message;
+              handleTelemetryUpdate(telemetryData);
               break;
+
             case 'status_update':
               if (message.data) {
+                console.log('📋 Status update:', message.data);
                 setStatus(prev => ({
                   ...prev,
                   ...message.data,
@@ -696,24 +797,58 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
                 }));
               }
               break;
+
+            case 'subscribed':
+              console.log('✅ Successfully subscribed to vehicle:', message.vehicle_id);
+              break;
+
+            case 'unsubscribed':
+              console.log('🔕 Unsubscribed from vehicle:', message.vehicle_id);
+              break;
+
+            case 'pong':
+              // Heartbeat response - no action needed
+              break;
+
+            case 'stats':
+              console.log('📈 Server stats:', message);
+              break;
+
+            case 'error':
+              console.error('❌ Server error:', message.message);
+              break;
+
+            default:
+              // ✅ FIX: Handle raw telemetry that might not have a type wrapper
+              if (message.position || message.lat || message.latitude || 
+                  message.vehicle_id || message.drone_id) {
+                console.log('📊 Raw telemetry (no type wrapper):', message);
+                handleTelemetryUpdate(message);
+              } else {
+                console.log('❓ Unknown message type:', message.type, message);
+              }
           }
         } catch (error) {
-          console.error('❌ Error parsing Kafka message:', error);
+          console.error('❌ Error parsing Kafka message:', error, 'Raw:', event.data);
         }
       };
 
-      ws.onerror = () => {
+      ws.onerror = (error) => {
+        console.error('❌ Kafka WebSocket error:', error);
         setIsConnected(false);
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        console.log(`🔌 Kafka WebSocket closed. Code: ${event.code}, Reason: ${event.reason || 'none'}`);
         setIsConnected(false);
         setTelemetrySource('disconnected');
         kafkaWsRef.current = null;
 
+        // Reconnect with exponential backoff
         if (reconnectAttemptsRef.current < maxReconnectAttempts && useKafka) {
           reconnectAttemptsRef.current += 1;
           const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
+          console.log(`🔄 Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts})`);
           reconnectTimeoutRef.current = setTimeout(() => {
             connectKafkaWebSocket();
           }, delay);
@@ -737,6 +872,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   const startStatusPolling = useCallback(() => {
     if (telemetryIntervalRef.current) return;
 
+    console.log('📡 Starting HTTP polling fallback');
     setTelemetrySource('http');
 
     telemetryIntervalRef.current = setInterval(async () => {
@@ -764,6 +900,8 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   // ============================================================================
 
   const disconnectAll = useCallback(() => {
+    console.log('🔌 Disconnecting all connections...');
+    
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -790,9 +928,9 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
   // EFFECTS
   // ============================================================================
 
+  // Initial connection
   useEffect(() => {
-    if (!isClient) return;
-    
+    console.log('🚀 Initializing telemetry connection...');
     if (useKafka) {
       connectKafkaWebSocket();
     } else {
@@ -805,8 +943,9 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
         clearInterval(updateTimerRef.current);
       }
     };
-  }, [isClient]);
+  }, []);
 
+  // Update frequency tracker
   useEffect(() => {
     updateTimerRef.current = setInterval(() => {
       setUpdateFrequency(updateCountRef.current);
@@ -820,6 +959,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     };
   }, []);
 
+  // Ping interval for keeping connection alive
   useEffect(() => {
     if (isConnected) {
       const pingInterval = setInterval(() => {
@@ -834,10 +974,12 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     }
   }, [isConnected]);
 
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
   // Add pulse animation style
   useEffect(() => {
-    if (!isClient) return;
-    
     const style = document.createElement('style');
     style.textContent = `
       @keyframes pulse {
@@ -849,68 +991,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
     return () => {
       document.head.removeChild(style);
     };
-  }, [isClient]);
-
-  // ============================================================================
-  // LOADING STATE (Server-side)
-  // ============================================================================
-
-  if (!isClient) {
-    return (
-      <div className="h-screen w-full bg-slate-950 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-          <p className="text-slate-400">Loading flight visualization...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ============================================================================
-  // CLIENT-SIDE RENDER WITH DYNAMIC IMPORTS
-  // ============================================================================
-
-  // Dynamic imports for Leaflet (only on client)
-  const L = require('leaflet');
-  const { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } = require('react-leaflet');
-
-  // Fix Leaflet default icon issue
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-  });
-
-  // Map Controller Component (defined inside to use the dynamically imported useMap)
-  const MapController: React.FC<{ center: [number, number]; zoom: number; followDrone: boolean; onZoomChange?: (zoom: number) => void }> = 
-    ({ center, zoom, followDrone: follow, onZoomChange: onZoom }) => {
-    const map = useMap();
-    
-    useEffect(() => {
-      if (follow && center[0] !== 0 && center[1] !== 0) {
-        map.setView(center, zoom, { animate: true, duration: 0.5 });
-      }
-    }, [center, zoom, follow, map]);
-
-    useEffect(() => {
-      const handleZoomEnd = () => {
-        if (onZoom) {
-          onZoom(map.getZoom());
-        }
-      };
-      map.on('zoomend', handleZoomEnd);
-      return () => {
-        map.off('zoomend', handleZoomEnd);
-      };
-    }, [map, onZoom]);
-    
-    return null;
-  };
-
-  // ============================================================================
-  // RENDER
-  // ============================================================================
+  }, []);
 
   return (
     <div className="h-screen w-full bg-slate-950 flex flex-col">
@@ -1123,7 +1204,7 @@ const DroneFlightVisualization: React.FC<DroneFlightVisualizationProps> = ({
             )}
 
             {/* Drone Position */}
-            {dronePosition && isValidCoordinate(dronePosition.lat, dronePosition.lon) && (
+            {typeof window !== 'undefined' && dronePosition && isValidCoordinate(dronePosition.lat, dronePosition.lon) && (
               <Marker
                 position={[dronePosition.lat, dronePosition.lon]}
                 icon={createDroneIcon({
